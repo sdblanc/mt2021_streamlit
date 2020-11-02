@@ -2,3 +2,5 @@ pandas
 scikit-learn
 pillow
 streamlit
+torch 
+torchvision

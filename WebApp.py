@@ -1,8 +1,7 @@
-# Description: This program detects if someone has diabetes using machine learning
-# 
-
 # Import the libraries
 import pandas as pd 
+import nltk
+import torch
 from PIL import Image
 import streamlit as st
 
