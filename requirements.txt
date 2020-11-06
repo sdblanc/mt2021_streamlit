@@ -1,6 +1,8 @@
 pandas
+nltk
 scikit-learn
 pillow
 streamlit
 torch 
 torchvision
+-e git+https://github.com/pytorch/fairseq.git#egg=fairseq
