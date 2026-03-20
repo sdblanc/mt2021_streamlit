@@ -1,16 +1,9 @@
-# MT2021_streamlit
-This repository wil contain the streamlit code for the RobBERT experiments of Silas Deblanc.
+# Vacation Itinerary
 
-# Installation
-**Step 1:** Clone the fairseq repository for installation (https://github.com/pytorch/fairseq)<br>
-<code> git clone https://github.com/pytorch/fairseq </code><br>
+A mobile-friendly, static webpage to present a trip itinerary.
 
-**Step 2:** Install requirements using scripts<br>
-<code> ./install_script.sh</code><br>
+## Usage
 
-**Step 3:** Run the app <br>
-<code> streamlit run WebApp.py</code><br>
+Open `index.html` in a browser, or host via GitHub Pages.
 
-Extra: You can download the RobBERT model from https://github.com/iPieter/BERDT/releases/download/v1.0/RobBERT-base.pt. This model uses the default RobBERTa dictionary which you can download using <code> wget -N 'https://dl.fbaipublicfiles.com/fairseq/gpt2_bpe/dict.txt' </code>
-
-<!-- Note for myself: Run 'conda activate mt_streamlit'  -->
+Edit `data.js` to update the itinerary content.
