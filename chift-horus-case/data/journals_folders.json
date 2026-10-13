@@ -1,0 +1,825 @@
+{
+ "route_key": "journals_folders",
+ "chift_routes": [
+  {
+   "chift_method": "GET",
+   "chift_path": "/consumers/{consumer_id}/accounting/journals",
+   "chift_name": "Get journals",
+   "verdict": "workaround",
+   "one_line": "Main call is POST /daybooks.list {FolderId} (folder resolved with the shared D7 rule), which gives id/code/name/type/iban/currency. journal_type and blocked come from the shared D6 Type table (blocked = true for every type without a documented posting endpoint, A), and journal_type describes the daybook, not every entry in it, because credit notes may sit in 200/100 daybooks (D1). counterpart_account needs an accounts lookup (ConcentrationAccount.Id → SearchKey). Horus has no native next_document_numbers (opt-in emulation via book-entries.list or account-histories.list), unallocated_account, blocked or other_currencies_allowed, so these are emulated or derived. Pagination is done in memory."
+  },
+  {
+   "chift_method": "GET",
+   "chift_path": "/consumers/{consumer_id}/accounting/folders",
+   "chift_name": "Get Folders",
+   "verdict": "supported",
+   "one_line": "POST /folders.list {Mode: 0} returns the folders of the connected license, and a Horus folder is the Chift folder (one company whose accounts are kept). selected is Chift-internal and drives the shared folder_id default (D7). active and main_currency (EUR) are constants. company_number is derived from the VAT number. addresses[].country needs GET /folders.info per folder, an optional N+1 for one minor field, so the route stays supported under D11."
+  },
+  {
+   "chift_method": "GET",
+   "chift_path": "/consumers/{consumer_id}/accounting/bookyears",
+   "chift_name": "Get Bookyears (context)",
+   "verdict": "workaround",
+   "one_line": "POST /fiscal-years.list {FolderId (D7 rule), Filter.IncludeFuture: true} gives name (Heading, free text such as \"2017 - 2018\", not 'YYYY'), start and end (date-time truncated to date). The required closed flag (IsClosed) is documented only on GET /fiscal-years.info, so it costs one call per fiscal year (each checked with the D13 Folder.Id guard) unless a test shows the list also returns it; this per-request N+1 makes it a workaround under D11."
+  }
+ ],
+ "summary": "Horus vocabulary maps onto Chift's. A Horus license (one fiduciary or SMB database with its own api_url) is one Chift consumer connection. A Horus folder ('the accounting record of one company') is the Chift folder, a Horus daybook is a Chift journal, and a Horus fiscal year is a Chift bookyear. Watch out: a Horus 'company' is a third party (customer, supplier or beneficiary), not the legal entity. Get Folders is close to 1:1 with POST /folders.list (Mode 0). GET /folders.info adds the country as optional enrichment, and active, main_currency (EUR) and company_number are constants or derived. Get journals needs several calls. POST /daybooks.list gives the core fields. The cached chart of accounts (accounts.list) turns ConcentrationAccount.Id into an account number. Only if Chift needs next_document_numbers: fiscal-years.list, then either one book-entries.list per daybook × fiscal year, or one account-histories.list per fiscal year grouped by DaybookSearchKey, because Horus exposes no numbering sequence. The daybook Type maps onto Chift's journal_type through the shared D6 table used by every route. Types with a documented posting endpoint (100/150/200/250/500/590/600) map by deduction (D). 550/610/690/700 and 0/900/990 are mapped and blocked on assumptions (A). Horus has distinct credit-note daybook types (150/250), but invoices carry their own Type (0/1), so credit notes may also sit in 200/100 daybooks: journal_type describes the daybook, not every entry in it (D1). Type is also the routing key for every write route, because it decides which posting endpoint is used. folder_id follows the shared D7 rule: it is required when more than one folder is selected; otherwise the connector uses the single selected folder, or the single folder from folders.list Mode 0; a Horus 403 becomes a Chift 400. Every Id-only .info call is checked against the folder (D13). Main risks: no native blocked, unallocated or currency-permission data; an undocumented numbering format; IsClosed documented only on fiscal-years.info; and Mode 0 can return a fiduciary's whole portfolio. On parameters: FolderId goes in the JSON body of nearly every folder-scoped .list/.new call. Updates and .info reads identify the entity by its own Id; .info is a GET with ?Id=, except POST cost-schemas.info and POST cost-sections.info, which take the Id in the body.",
+ "verdict": "workaround",
+ "verdict_rationale": "Calibrated with the shared D11 scale. Folders: supported. A native list endpoint covers id, name, VAT and most of the address in one call. The folders.info N+1 is optional enrichment for one minor field (country), and D11 explicitly keeps Folders supported. Journals: workaround. The core fields are native in one call, but counterpart_account needs a LOOKUP. next_document_numbers can only be emulated, and only roughly: either fiscal years × daybooks book-entries.list scans or one account-histories.list per fiscal year, with an undocumented number format. unallocated_account is not exposed. blocked and other_currencies_allowed are derived from the daybook type (shared D6 table) and the posting endpoints' capabilities, partly on assumptions, not read from Horus. Page and size are emulated. Bookyears (context): workaround, because the required 'closed' flag is documented only on fiscal-years.info (one call per year, i.e. a per-request N+1 under D11). The group verdict follows the hardest route, journals.",
+ "horus_endpoints": [
+  {
+   "method": "POST",
+   "path": "/daybooks.list",
+   "role": "Primary source for Get journals: all daybooks of a folder with Id, SearchKey, Heading, Type, Iban, Bic, WithCurrency, CurrencyCode, IsUsed, IsWages, ConcentrationAccount, Folder. Type feeds the shared D6 journal_type/blocked table. The same cached list serves the write routes' daybook auto-selection: the D1 per-invoice_type filter with refund fallback for create_invoice, and Type 600 only for create_misc_operation (D6)",
+   "pattern": "primary",
+   "cardinality": "1 per Chift call (reference data: cache per folder)",
+   "evidence": "POST /daybooks.list → PAGE TEXT \"Get a list of daybooks by folder.\"; FolderId *; Guide: Reading accounting data → \"Daybooks (journals) daybooks.list\""
+  },
+  {
+   "method": "GET",
+   "path": "/daybooks.info",
+   "role": "Single daybook by Id. Not needed for the list. Used to validate a journal_id passed to write routes: Data.Type must fit the route (D1/D6) and Data.Folder.Id must equal the resolved folder_id, otherwise 400 (D13)",
+   "pattern": "alternative",
+   "cardinality": "1 per journal_id validated (optional)",
+   "evidence": "GET /daybooks.info → PAGE TEXT \"Get details for a specific daybook.\"; param[query] Id *; Data.Type; Data.Folder.Id"
+  },
+  {
+   "method": "POST",
+   "path": "/accounts.list",
+   "role": "Turns daybook ConcentrationAccount {Type: Accounts, Id} into the account number (SearchKey) for counterpart_account",
+   "pattern": "lookup",
+   "cardinality": "cached reference data (1 per folder, reused across routes)",
+   "evidence": "POST /accounts.list → Data[].Id, Data[].SearchKey [example=\"400000\"]; Guide: Data model → \"Each account is identified by a unique search key, which is usually the account number\""
+  },
+  {
+   "method": "GET",
+   "path": "/accounts.info",
+   "role": "Fallback when a ConcentrationAccount.Id is not in the cached chart (accounts.list documents no IncludeInactive filter), or an alternative to loading the whole chart: resolve one Id → SearchKey. Id-only call, so check Data.Folder.Id = folder_id, otherwise 400 (D13)",
+   "pattern": "alternative",
+   "cardinality": "1 per distinct unresolved ConcentrationAccount (Bank/Financial daybooks only)",
+   "evidence": "GET /accounts.info → param[query] Id *; Data.SearchKey; Data.Folder.Id; POST /accounts.list → Filter has SearchKeys, Heading only"
+  },
+  {
+   "method": "POST",
+   "path": "/fiscal-years.list",
+   "role": "Primary source for Get bookyears. Bookyear frame (Heading, StartDate, EndDate) for journals.next_document_numbers. Closure dates for write-route pre-checks. Filter.Dates [entryDate] resolves the fiscal year that contains a given date (write routes)",
+   "pattern": "enrichment",
+   "cardinality": "1 per folder (cache)",
+   "evidence": "POST /fiscal-years.list → PAGE TEXT \"Get a list of fiscal years by folder.\"; Filter.IncludeFuture \"*FALSE* by default\"; Filter.Dates \"Filters on fiscal years encapsulating the dates\"; Guide: Data model → \"Check closure dates before posting\""
+  },
+  {
+   "method": "GET",
+   "path": "/fiscal-years.info",
+   "role": "Only documented source of IsClosed: needed for Chift bookyears.closed. Optionally reused (from the same cache) to include past but still-open years in the next_document_numbers emulation. Id-only call, so check Data.Folder.Id = folder_id (D13)",
+   "pattern": "follow_up",
+   "cardinality": "1 per fiscal year (N+1, cacheable, shared between Get bookyears and Get journals)",
+   "evidence": "GET /fiscal-years.info → Data.IsClosed: boolean [example=false] (absent from the POST /fiscal-years.list response in both the reference and the raw Notion export); Data.Folder.Id"
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.list",
+   "role": "Optional emulation of next_document_number: highest DocumentNo per daybook within a fiscal year's period. The write routes use the same endpoint with Filter.DocumentNo for the D12 duplicate pre-check",
+   "pattern": "optional",
+   "cardinality": "1 per postable daybook × selected fiscal year (expensive; opt-in only)",
+   "evidence": "POST /book-entries.list → PAGE TEXT \"Get a list of book entries by folder and daybook, for a given period.\"; DaybookId *, StartMonth *, StartYear *, EndMonth *, EndYear *; Filter.ConfirmedOnly; Filter.DocumentNo; Data[].DocumentNo [example=1904001]"
+  },
+  {
+   "method": "POST",
+   "path": "/account-histories.list",
+   "role": "Cheaper-in-calls alternative for the next_document_numbers emulation: one call per fiscal year returns every entry line of the folder across all daybooks. Group by DaybookSearchKey and take max(DocumentNo), ignoring 0. Bigger payload (one row per line), so use gzip",
+   "pattern": "alternative",
+   "cardinality": "1 per selected fiscal year (instead of 1 per daybook × fiscal year)",
+   "evidence": "POST /account-histories.list → FolderId *, StartMonth *, StartYear *, EndMonth *, EndYear *, Filter.DaybookIds \"Filters on daybooks specified by their id.\", Filter.ConfirmedOnly, Filter.IncludeReport \"*TRUE* by default\"; Data[].DaybookSearchKey [example=\"VEN\"], DocumentNo [example=1904001]; Guide: Making requests → \"Gzip compression is available on every endpoint and highly recommended\""
+  },
+  {
+   "method": "POST",
+   "path": "/folders.list",
+   "role": "Primary source for Get Folders: folders visible to the authenticated user. Also the D7 default-folder fallback: when folder_id is omitted and no activation selection is stored, a Mode 0 result with exactly one folder gives the folder to use",
+   "pattern": "primary",
+   "cardinality": "1 per Chift call (plus the D7 fallback call when no selection is stored; cacheable)",
+   "evidence": "POST /folders.list → PAGE TEXT \"Get a list of folders.\"; Mode *: number enum[0, 1]"
+  },
+  {
+   "method": "GET",
+   "path": "/folders.info",
+   "role": "Enrichment: CountryCode, which only .info returns, for addresses[].country. Also the natural mapping for Chift 'Get Folder' by id",
+   "pattern": "enrichment",
+   "cardinality": "1 per folder (N+1, cache; optional)",
+   "evidence": "GET /folders.info → PAGE TEXT \"Get details for a specific folder.\"; Data.CountryCode: string [example=\"BE\"]"
+  },
+  {
+   "method": "GET",
+   "path": "/users.me",
+   "role": "At activation: IsAccountant tells whether the user is an accountant (Horus Office) or an entrepreneur (Horus Mobile), which changes what folders.list Mode returns. Id can be compared with folders ResponsibleUser.Id to flag the accountant's own folders",
+   "pattern": "optional",
+   "cardinality": "once per connection",
+   "evidence": "GET /users.me → Data.Id, Data.IsAccountant: boolean; Guide: Data model → \"Users are either accountants using Horus Office ( IsAccountant: true ) or entrepreneurs using Horus Mobile.\""
+  },
+  {
+   "method": "GET",
+   "path": "/licenses.me",
+   "role": "Connection metadata (license name, language) for labelling the Chift consumer connection. No FolderItem field",
+   "pattern": "optional",
+   "cardinality": "once per connection",
+   "evidence": "GET /licenses.me → PAGE TEXT \"Get the license linked to the current authenticated user.\"; Data.LicenseName, IsMain"
+  },
+  {
+   "method": "GET",
+   "path": "/licenses.main",
+   "role": "Connection metadata: the fiduciary/SMB license that owns the database. No FolderItem field",
+   "pattern": "optional",
+   "cardinality": "once per connection",
+   "evidence": "GET /licenses.main → PAGE TEXT \"Get the main license, i.e. the fiduciary/SMB license.\""
+  }
+ ],
+ "call_sequence": [
+  "Activation (once per Chift consumer, i.e. one Horus license connection with its own api_url and tokens): GET /users.me → IsAccountant (persona) and Id. Optional: GET /licenses.me and GET /licenses.main to label the connection.",
+  "Get Folders 1: POST /folders.list {\"Mode\": 0} → Data[] (Id, FolderName, IsVatLiable, VatNumber, Address, ZipCode, Locality, Legislation, ResponsibleUser, …).",
+  "Get Folders 2 (optional N+1, cache): GET /folders.info?Id={Data[].Id} → CountryCode for addresses[].country (folders.list has no CountryCode).",
+  "Get Folders 3: merge with Chift's activation selection (selected), stored per consumer because it drives the D7 folder_id default. active = true for every folder returned. A previously selected folder that is no longer returned → active = false. Optional (D): in the activation picker, mark folders where ResponsibleUser.Id = users.me Id as 'mine'. For accountants this is equivalent to Mode 1, without a second call.",
+  "Get journals 0: resolve the folder with the shared D7 rule. If the Chift query folder_id is given, use it as the Horus FolderId (GUID). If it is omitted: exactly one folder selected at activation → use it; no selection stored → POST /folders.list {\"Mode\": 0} and use its folder if exactly one is returned; otherwise 400 'folder_id required'. A Horus 403 on any folder-scoped call below → Chift 400 'folder not accessible with this connection' (D7).",
+  "Get journals 1: POST /daybooks.list {\"FolderId\": …} with no Filter, so every Type comes back → Data[].",
+  "Get journals 2: POST /accounts.list {\"FolderId\": …} (cached per folder) → map Id → SearchKey. Resolve ConcentrationAccount.Id of Bank/Financial daybooks → counterpart_account. If an Id is missing from the cache, fall back to GET /accounts.info?Id= and check Data.Folder.Id = FolderId (D13). daybooks.list does not support sideloading.",
+  "Get journals 3 (optional, opt-in): POST /fiscal-years.list {\"FolderId\": …, \"Filter\": {\"IncludeFuture\": true}} (cached). Select the fiscal years: by default those with EndDate >= today (current and future; proxy for 'open', A). Optionally also past years whose IsClosed = false, read from the fiscal-years.info cache shared with Get bookyears (adds N .info calls if not cached). For each selected year, either (a) POST /book-entries.list {FolderId, DaybookId, StartMonth/StartYear/EndMonth/EndYear from the year} per postable daybook, or (b) one POST /account-histories.list {FolderId, period, Filter.IncludeReport: false} grouped by DaybookSearchKey. next_document_number = max(DocumentNo, ignoring 0) + 1.",
+  "Get journals 4: map Type → journal_type and blocked with the shared D6 table (blocked = true for 550, 610, 690, 700, 900, 990, 0 and unknown Types, A), derive other_currencies_allowed from Type, slice page/size in memory, and return ChiftPage with total = number of mapped daybooks.",
+  "Get bookyears (context): resolve the folder with the same D7 rule. POST /fiscal-years.list {FolderId, Filter.IncludeFuture: true}, then GET /fiscal-years.info?Id= per fiscal year for IsClosed (N+1, cache; check Data.Folder.Id = FolderId, D13). First test whether the list response actually includes IsClosed (the Data model guide implies it); if it does, drop the N+1."
+ ],
+ "field_mappings": [
+  {
+   "chift_field": "path:consumer_id",
+   "kind": "path_param",
+   "chift_required": true,
+   "horus_source": "none (Horus connection record: api_url + access_token + refresh_token)",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "Identifies the Chift consumer, which is bound to exactly one Horus license connection. Chift uses it to pick the stored api_url and Bearer token. Nothing is sent to Horus. Applies to journals, folders and bookyears.",
+   "label": "F",
+   "evidence": "Guide: Authentication overview → \"each connection has its own api_url , access token and refresh token\"; \"Never hard-code the API URL\""
+  },
+  {
+   "chift_field": "journals:query:folder_id",
+   "kind": "query_param",
+   "chift_required": false,
+   "horus_source": "POST /daybooks.list → FolderId (body)",
+   "classification": "DIRECT",
+   "rule": "Pass the Chift folder_id (= Horus Folder.Id GUID) as FolderId in the JSON body; Horus requires it. Shared D7 rule: folder_id is required whenever the connection has more than one selected folder. When it is omitted: if exactly one folder was selected at activation, use it; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; otherwise return 400 'folder_id required'. Horus 403 → Chift 400 'folder not accessible with this connection' (D7). The same rule applies to accounts.list, fiscal-years.list, book-entries.list and account-histories.list in this route.",
+   "label": "F",
+   "evidence": "POST /daybooks.list → FolderId *: string; Guide: Data model → \"Almost every endpoint requires a FolderId .\"; Guide: Responses & errors → 403 \"Forbidden: the user or integration is not allowed to access this resource.\"; Chift folder_id \"Required when the multiple folders feature is enabled.\""
+  },
+  {
+   "chift_field": "journals:query:page",
+   "kind": "query_param",
+   "chift_required": false,
+   "horus_source": "none",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "Horus lists have no paging parameters. Fetch all daybooks, then slice in memory (offset = (page-1)*size). Cheap, because a folder has few daybooks.",
+   "label": "D",
+   "evidence": "No page/size/offset/limit parameter anywhere in the Horus reference (grep). POST /daybooks.list body = FolderId, Filter only"
+  },
+  {
+   "chift_field": "journals:query:size",
+   "kind": "query_param",
+   "chift_required": false,
+   "horus_source": "none",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "In-memory page size (Chift default 50).",
+   "label": "D",
+   "evidence": "Same as page: no Horus pagination"
+  },
+  {
+   "chift_field": "journals:response.total",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "count of POST /daybooks.list → Data[] after mapping",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "Number of daybooks returned (after any connector-side exclusion).",
+   "label": "D",
+   "evidence": "POST /daybooks.list → Data: array[object] (no total field)"
+  },
+  {
+   "chift_field": "journals:response.page / response.size",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "none",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "Echo the requested page and size.",
+   "label": "D",
+   "evidence": "none"
+  },
+  {
+   "chift_field": "journals:response.items[].id",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "POST /daybooks.list → Data[].Id",
+   "classification": "DIRECT",
+   "rule": "Daybook GUID. Write routes take it back as DaybookId (invoices.*.new, book-entries.*.new).",
+   "label": "F",
+   "evidence": "POST /daybooks.list → Id [example=\"4452b13c-…\"]; POST /invoices.sales.new → DaybookId *"
+  },
+  {
+   "chift_field": "journals:response.items[].code",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /daybooks.list → Data[].SearchKey",
+   "classification": "DIRECT",
+   "rule": "Human-readable daybook code (e.g. PUR, ACH, VEN), unique within the folder. Also the prefix of BookEntryNumber '{DaybookSearchKey}-{Number}' used by invoices.sales.outstanding.info, and the grouping key in the account-histories.list emulation.",
+   "label": "F",
+   "evidence": "Guide: Data model → \"Daybooks are identified by a SearchKey (e.g. ACH , VEN ).\"; \"search key ( SearchKey ), unique within the folder\"; Guide: Outstanding items & matching → \"formatted as {DaybookSearchKey}-{Number}\""
+  },
+  {
+   "chift_field": "journals:response.items[].name",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "POST /daybooks.list → Data[].Heading",
+   "classification": "DIRECT",
+   "rule": "Heading as is. Daybooks have a single heading (no AlternateHeading, unlike accounts). If Heading is empty, fall back to SearchKey.",
+   "label": "F",
+   "evidence": "POST /daybooks.list → Heading: string [example=\"Purchases\"]"
+  },
+  {
+   "chift_field": "journals:response.items[].journal_type",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "POST /daybooks.list → Data[].Type",
+   "classification": "TRANSFORM",
+   "rule": "Shared D6 table (identical in every route): 100 Purchase→supplier_invoice (D); 150 PurchaseCreditNote→supplier_refund (D); 200 Sale→customer_invoice (D); 250 SaleCreditNote→customer_refund (D); 500 Bank→financial_operation (D); 590 Financial (= Credit card)→financial_operation (D); 600 MiscOperation→miscellaneous_operation (D); 550 Cash→financial_operation (A); 610 TemporaryMiscOperation, 690 SystemMiscOperation and 700 CostMiscOperation→miscellaneous_operation (A); 900 Budget, 990 External, 0 Undefined and any undocumented future value→unknown (A, logged). journal_type describes the daybook, not every entry in it (D1). Horus invoices carry their own Type (0 invoice / 1 credit note), so credit notes may sit in 200/100 daybooks, e.g. when a folder has no 250/150 daybook and create_invoice falls back to 200/100. Never infer an entry's document type from journal_type; get_invoices scans both sibling types and classifies by partner-line sign (D1).",
+   "label": "D",
+   "evidence": "POST /daybooks.list → Type: \"`0`: Undefined - `100`: Purchase - `150`: PurchaseCreditNote - `200`: Sale - `250`: SaleCreditNote - `500`: Bank - `550`: Cash - `590`: Financial - `600`: MiscOperation - `610`: TemporaryMiscOperation - `690`: SystemMiscOperation - `700`: CostMiscOperation - `900`: Budget - `990`: External\"; POST /daybooks.new → \"`590`: Financial (= Credit card)\"; Guide: Posting sales & purchase invoices → \"Type is 0 for an invoice and 1 for a credit note.\" and \"types 200 / 250 for sales and 100 / 150 for purchases\"; Guide: Data model → \"Other types exist (cash, temporary or system miscellaneous operations, budget, external).\""
+  },
+  {
+   "chift_field": "journals:response.items[].counterpart_account",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /daybooks.list → Data[].ConcentrationAccount.Id → POST /accounts.list (cached), else GET /accounts.info → SearchKey",
+   "classification": "LOOKUP",
+   "rule": "Only for Type 500/590 (and 550 if filled): resolve the ConcentrationAccount reference to the account's SearchKey (the account number, e.g. 550000). null when ConcentrationAccount is null and for other types. daybooks.list does not support sideloading, so use the cached chart of accounts, with accounts.info as fallback for Ids missing from the cache. The fallback checks Data.Folder.Id = folder_id (D13).",
+   "label": "D",
+   "evidence": "POST /daybooks.new → ConcentrationAccountId \"Only for type \"Bank\" and \"Financial\". The id of the general financial account.\"; Guide: Sideloading → supported on book-entries.list, account-histories.list, companies.list, invoices.sales.outstanding.list only; GET /accounts.info → Data.Folder.Id"
+  },
+  {
+   "chift_field": "journals:response.items[].unallocated_account",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "none",
+   "classification": "NA",
+   "rule": "Return null. The API exposes no suspense or unallocated account per daybook or folder. The financials.new/MO examples use account 499000 on a line, but that is example data, not configuration. Whether Horus Office configures one internally is an open question.",
+   "label": "D",
+   "evidence": "grep -i 'suspense|unallocated|attente' over the reference and guides → no hit; POST /daybooks.list Data[] has no such account (only ConcentrationAccount)"
+  },
+  {
+   "chift_field": "journals:response.items[].next_document_numbers[]",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /fiscal-years.list → Heading/StartDate/EndDate + POST /book-entries.list (per daybook × year) OR POST /account-histories.list (per year, grouped by DaybookSearchKey) → max(DocumentNo)",
+   "classification": "COMPOSITE",
+   "rule": "No native sequence. Default: return [] (the Chift default). Opt-in emulation: one item per selected fiscal year. fiscal-years.list has no IsClosed, so by default select years with EndDate >= today (A), and optionally past years with IsClosed = false from the cached fiscal-years.info calls. bookyear_name ← Heading; start_date/end_date ← StartDate/EndDate truncated to date; next_document_number ← max(DocumentNo, ignoring 0 = unconfirmed) + 1, as a string. The numbering format is undocumented (examples 1904001, 2301016, 201909001, 202409001), so +1 may be wrong at month or year boundaries.",
+   "label": "A",
+   "evidence": "POST /book-entries.list → DocumentNo: number [example=1904001]; POST /account-histories.list → DaybookSearchKey, DocumentNo; POST /invoices.sales.new → Number \"(can be 0 if not confirmed)\"; no next-number endpoint for documents (only matching.next-number.* for MatchNo)"
+  },
+  {
+   "chift_field": "journals:response.items[].next_document_numbers[].bookyear_name / start_date / end_date",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /fiscal-years.list → Data[].Heading, StartDate, EndDate",
+   "classification": "TRANSFORM",
+   "rule": "Heading DIRECT (free text, e.g. \"2017 - 2018\"; never parse it). Dates: keep the date part of the ISO date-time with no timezone conversion (EndDate is 23:59:59+00:00).",
+   "label": "F",
+   "evidence": "POST /fiscal-years.list → Heading [example=\"2017 - 2018\"], StartDate [example=\"2017-01-01T00:00:00+00:00\"], EndDate [example=\"2017-12-31T23:59:59+00:00\"]"
+  },
+  {
+   "chift_field": "journals:response.items[].iban",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /daybooks.list → Data[].Iban",
+   "classification": "DIRECT",
+   "rule": "Pass through for Bank (and Financial) daybooks; null otherwise. Bic is available but has no Chift field.",
+   "label": "F",
+   "evidence": "POST /daybooks.list → Filter.Iban \"Filters on daybook's iban using the *equals* clause (for *Bank*, *Financial* daybooks)\"; Data[].Iban: string|null"
+  },
+  {
+   "chift_field": "journals:response.items[].currency",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /daybooks.list → Data[].WithCurrency + CurrencyCode",
+   "classification": "TRANSFORM",
+   "rule": "currency = CurrencyCode when WithCurrency = true; otherwise null (the journal follows the folder currency, which matches the Chift semantics). The 'NULL = EUR' reading is carried over from other endpoints because daybook CurrencyCode has no description. Only Bank daybooks can carry their own currency.",
+   "label": "D",
+   "evidence": "POST /daybooks.list → WithCurrency \"Can be true only for \"Bank\" types\"; CurrencyCode: string|null (no description); POST /account-histories.list → CurrencyCode \"*NULL* means EURO (€) was used.\"; Chift Journal.currency \"If empty, the journal follows the currency of the accounting folder.\""
+  },
+  {
+   "chift_field": "journals:response.items[].other_currencies_allowed",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "derived from Type + posting-endpoint capabilities (invoices.*.new CurrencyCode; banks/financials/MO bodies have none)",
+   "classification": "COMPOSITE",
+   "rule": "100/150/200/250 → true, but only if the folder is 'configured to allow currencies', which the API cannot read (A). 500/590/600 → false (D): their posting bodies have no currency field. Other types → false.",
+   "label": "A",
+   "evidence": "POST /invoices.sales.new → CurrencyCode \"*NULL* by default (= EUR). The folder must be configured to allow currencies for using this field.\"; no CurrencyCode in book-entries.banks/financials/miscellaneous-operations.new (grep)"
+  },
+  {
+   "chift_field": "journals:response.items[].blocked",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "derived from Data[].Type (shared D6 table; Guide: Data model posting table; daybooks.new Type enum)",
+   "classification": "COMPOSITE",
+   "rule": "Shared D6 rule. blocked = false for 100, 150, 200, 250, 500, 590, 600 (D: documented API posting endpoint per the guide table, and the same set daybooks.new accepts). blocked = true for every type without a documented API posting endpoint: 550, 610, 690, 700, 900, 990, 0 (A), and for any unknown future Type. For 550 Cash and 610 TemporaryMiscOperation this is a conservative default pending Horus confirmation, because book-entries.financials.new and miscellaneous-operations.new do not restrict DaybookId by type (only banks.new does). Suggested sandbox test: an unconfirmed financials.new on a 550 daybook and an MO on a 610 daybook. create_misc_operation auto-selects and validates only Type 600, which matches this flag (D6). Do NOT map IsUsed (undocumented meaning). Period closures (fiscal year Last*ClosureDate) are date-level, not journal-level, so they do not set blocked.",
+   "label": "A",
+   "evidence": "Guide: Data model → \"The daybook Type drives which endpoint you use to post entries\" (table lists 100/150, 200/250, 500, 590, 600 only) and \"Other types exist (cash, temporary or system miscellaneous operations, budget, external).\"; POST /book-entries.banks.new → DaybookId \"Must be of type Bank (= 500)\"; POST /book-entries.financials.new and /book-entries.miscellaneous-operations.new → DaybookId * (no type restriction); POST /daybooks.new → Type enum[100, 150, 200, 250, 500, 590, 600]"
+  },
+  {
+   "chift_field": "folders:response[].id",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "POST /folders.list → Data[].Id",
+   "classification": "DIRECT",
+   "rule": "Folder GUID. It becomes the Chift folder_id and is sent as FolderId on every other folder-scoped Horus call.",
+   "label": "F",
+   "evidence": "Guide: Reading accounting data → \"Keep the folder Id : it is the FolderId used by nearly every other endpoint.\""
+  },
+  {
+   "chift_field": "folders:response[].name",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "POST /folders.list → Data[].FolderName",
+   "classification": "DIRECT",
+   "rule": "FolderName (e.g. \"RedCorp SPRL\"). SearchKey can be shown as a secondary label during activation.",
+   "label": "F",
+   "evidence": "POST /folders.list → FolderName: string [example=\"RedCorp SPRL\"]"
+  },
+  {
+   "chift_field": "folders:response[].selected",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "none",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "Set from the user's choice during Chift activation. No Horus data.",
+   "label": "F",
+   "evidence": "Chift FolderItem.selected \"Indicates whether the folder was selected during the Chift activation process.\""
+  },
+  {
+   "chift_field": "folders:response[].active",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "none (presence in POST /folders.list)",
+   "classification": "CONSTANT",
+   "rule": "true for every folder returned. Horus has no folder status or archived flag. A selected folder that disappears from folders.list, or answers 403/404, → false.",
+   "label": "A",
+   "evidence": "POST /folders.list response has no Inactive/status field. Inactive exists only on accounts, vehicles, cost sections and companies BeneficiaryInfo."
+  },
+  {
+   "chift_field": "folders:response[].vat",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /folders.list → Data[].VatNumber (IsVatLiable)",
+   "classification": "DIRECT",
+   "rule": "vat = VatNumber (with country prefix, e.g. BE0000000097) if IsVatLiable = true, else null. The null rule is a connector rule, deduced from the filter text.",
+   "label": "D",
+   "evidence": "POST /folders.list → Filter.VatNumber \"Filters on the VAT number using the *equals* clause - *IsVatLiable* must be set to *true*\"; Data[].VatNumber: string|null [example=\"BE0000000097\"]"
+  },
+  {
+   "chift_field": "folders:response[].company_number",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /folders.list → Data[].VatNumber (+ Legislation)",
+   "classification": "TRANSFORM",
+   "rule": "Folders have no enterprise-number field. For Legislation BE and a VAT-liable folder: strip 'BE' from VatNumber (general accounting knowledge: the Belgian VAT number = BE + enterprise number). Otherwise null (LU, or not VAT-liable).",
+   "label": "A",
+   "evidence": "POST /folders.list/info → no EnterpriseNumber (it exists only on POST /companies.list → EnterpriseNumber \"Only if 'IsVatLiable' is false.\")"
+  },
+  {
+   "chift_field": "folders:response[].main_currency",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "none (convention NULL currency = EUR)",
+   "classification": "CONSTANT",
+   "rule": "\"EUR\" (ISO 4217). Horus folders have no currency field, and NULL currency means EUR throughout the API. Note: the Chift doc says \"ISO 3166-1\", which is a doc nit; AccountingInfoOut says ISO-4217.",
+   "label": "D",
+   "evidence": "POST /account-histories.list → CurrencyCode \"*NULL* means EURO (€) was used.\"; POST /invoices.sales.new → CurrencyCode \"*NULL* by default (= EUR)\" (enum has no EUR); Legislation enum[\"BE\", \"LU\"]"
+  },
+  {
+   "chift_field": "folders:response[].addresses[]",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "POST /folders.list → Address, ZipCode, Locality (+ GET /folders.info → CountryCode)",
+   "classification": "COMPOSITE",
+   "rule": "One address object. street and number are parsed from the single Address string ('street, number' pattern per the example; A). box = null (no field). postal_code ← ZipCode. city ← Locality. country: see below.",
+   "label": "A",
+   "evidence": "POST /folders.list → Address [example=\"Quai des ardennes, 9\"], ZipCode [example=\"4020\"], Locality [example=\"Liège\"]"
+  },
+  {
+   "chift_field": "folders:response[].addresses[].country",
+   "kind": "response_field",
+   "chift_required": false,
+   "horus_source": "GET /folders.info → Data.CountryCode",
+   "classification": "COMPOSITE",
+   "rule": "Merge from the folder's detail endpoint: one folders.info call per folder (cache it). Source field is F. The ISO 3166-1 alpha-2 format is deduced from the example \"BE\" and the 2-letter codes of countries.list (D). Cheap fallback: Legislation (BE/LU), labelled A because legislation is not necessarily the address country.",
+   "label": "D",
+   "evidence": "GET /folders.info → CountryCode: string [example=\"BE\"] (absent from POST /folders.list response); POST /countries.list → Data[].CountryCode [example=\"BE\"]"
+  },
+  {
+   "chift_field": "bookyears:query:folder_id",
+   "kind": "query_param",
+   "chift_required": false,
+   "horus_source": "POST /fiscal-years.list → FolderId",
+   "classification": "DIRECT",
+   "rule": "Same shared D7 folder rule as journals: the single folder selected at activation, else the single folder from POST /folders.list {Mode: 0}, else 400 'folder_id required'. Horus 403 → Chift 400 'folder not accessible with this connection'.",
+   "label": "F",
+   "evidence": "POST /fiscal-years.list → FolderId *"
+  },
+  {
+   "chift_field": "bookyears:query:page / query:size",
+   "kind": "query_param",
+   "chift_required": false,
+   "horus_source": "none",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "In-memory pagination.",
+   "label": "D",
+   "evidence": "No Horus pagination"
+  },
+  {
+   "chift_field": "bookyears:response.total / page / size",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "count of POST /fiscal-years.list → Data[]",
+   "classification": "CHIFT_INTERNAL",
+   "rule": "total = number of fiscal years returned (IncludeFuture = true). page and size echo the request.",
+   "label": "D",
+   "evidence": "POST /fiscal-years.list → Data: array[object] (no total field)"
+  },
+  {
+   "chift_field": "bookyears:response.items[].name",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "POST /fiscal-years.list → Data[].Heading",
+   "classification": "DIRECT",
+   "rule": "Heading as is. It is free text (format like \"2017 - 2018\", not 'YYYY') and may not match the dates, so never parse or derive anything from it.",
+   "label": "F",
+   "evidence": "POST /fiscal-years.list → Heading [example=\"2017 - 2018\"] with StartDate 2017-01-01 / EndDate 2017-12-31; Chift BookYear.name \"typically in the format 'YYYY'\""
+  },
+  {
+   "chift_field": "bookyears:response.items[].start / end",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "POST /fiscal-years.list → Data[].StartDate / EndDate",
+   "classification": "TRANSFORM",
+   "rule": "Keep the date part of the ISO date-time (no timezone shift).",
+   "label": "F",
+   "evidence": "StartDate [example=\"2017-01-01T00:00:00+00:00\"], EndDate [example=\"2017-12-31T23:59:59+00:00\"]"
+  },
+  {
+   "chift_field": "bookyears:response.items[].closed",
+   "kind": "response_field",
+   "chift_required": true,
+   "horus_source": "GET /fiscal-years.info → Data.IsClosed",
+   "classification": "COMPOSITE",
+   "rule": "Merge from the detail endpoint: one .info call per fiscal year, checking Data.Folder.Id = folder_id (D13). Cache it, since closed years rarely reopen. Do not infer closure from Last*ClosureDate. Test first whether fiscal-years.list returns IsClosed in practice (the guide implies it); if so, read it there.",
+   "label": "F",
+   "evidence": "GET /fiscal-years.info → IsClosed: boolean [example=false]; Data.Folder.Id; not present in POST /fiscal-years.list (reference and raw Notion export)"
+  }
+ ],
+ "horus_required_without_chift_source": [
+  {
+   "horus_field": "POST /folders.list → Mode *",
+   "how_to_fill": "CONSTANT 0 ('All folders'). For an accountant it returns every folder of the license; for an entrepreneur Modes 0 and 1 are identical. Chift's activation selection then narrows the list. 'My folders' can be flagged client-side via ResponsibleUser.Id = users.me Id instead of a Mode 1 call. Mode 0 is also the call behind the D7 fallback when no activation selection is stored (the folder is used only if exactly one is returned).",
+   "label": "D"
+  },
+  {
+   "horus_field": "POST /daybooks.list, /accounts.list, /fiscal-years.list, /book-entries.list, /account-histories.list → FolderId *",
+   "how_to_fill": "Shared D7 rule: the Chift folder_id; if omitted, the single folder selected at activation; if no selection is stored, the single folder returned by folders.list {Mode: 0}; otherwise 400 'folder_id required'.",
+   "label": "D"
+  },
+  {
+   "horus_field": "POST /fiscal-years.list → Filter.IncludeFuture",
+   "how_to_fill": "true (default FALSE), so that next year's bookyear and numbering show up",
+   "label": "D"
+  },
+  {
+   "horus_field": "POST /book-entries.list → DaybookId *, StartMonth *, StartYear *, EndMonth *, EndYear *",
+   "how_to_fill": "Only for the optional next_document_numbers emulation (option a): DaybookId = each postable daybook; month and year bounds = the selected fiscal year's StartDate/EndDate (exact period semantics are an open question)",
+   "label": "D"
+  },
+  {
+   "horus_field": "POST /account-histories.list → StartMonth *, StartYear *, EndMonth *, EndYear *; Filter.IncludeReport",
+   "how_to_fill": "Only for the emulation (option b): period = the selected fiscal year's bounds. Set IncludeReport = false to skip report lines (IsReport). Its meaning is undocumented; the general accounting reading is carried-forward balances (A).",
+   "label": "A"
+  },
+  {
+   "horus_field": "POST /book-entries.list or /account-histories.list → Filter.ConfirmedOnly",
+   "how_to_fill": "Optional. true ignores unconfirmed API-pushed entries with caller-chosen Numbers. Whether unconfirmed numbers reserve a slot in Horus is undocumented, so the default is to be validated.",
+   "label": "A"
+  },
+  {
+   "horus_field": "GET /folders.info, /fiscal-years.info, /accounts.info → Id * (query)",
+   "how_to_fill": "Ids from folders.list Data[].Id, fiscal-years.list Data[].Id, daybooks.list Data[].ConcentrationAccount.Id. For fiscal-years.info and accounts.info, check the returned Data.Folder.Id against folder_id (D13).",
+   "label": "F"
+  },
+  {
+   "horus_field": "Base URL + Authorization: Bearer header",
+   "how_to_fill": "From the Chift consumer's stored Horus connection (api_url; access token refreshed on expiry)",
+   "label": "F"
+  }
+ ],
+ "limitations": [
+  {
+   "description": "Horus has no 'next document number' per daybook or fiscal year. Invoice endpoints have no AutoGenerateNumber; only bank, financial and MO endpoints do, and only when Confirmed = true.",
+   "impact": "next_document_numbers is either [] or an approximate emulation: one book-entries.list per daybook × fiscal year, or one heavier account-histories.list per fiscal year; the format is undocumented. Mitigation: post unconfirmed entries with Number 0, which the docs allow, and let the accountant number them. Under D12 this mitigation covers Chift 'draft' and consumers with the 'always push unconfirmed' setting only. Chift 'posted' (the default) sends Confirmed = true, so a confirmed invoice needs a real Number: either from invoice_number or from the same max(DocumentNo)+1 emulation (A). It also needs a duplicate pre-check with book-entries.list Filter.DocumentNo (D12).",
+   "label": "F"
+  },
+  {
+   "description": "No unallocated or suspense account is exposed on daybooks or folders (verified absence).",
+   "impact": "unallocated_account is always null, so bank reconciliation flows that rely on it cannot be prefilled.",
+   "label": "D"
+  },
+  {
+   "description": "Daybooks have no blocked, active or archived flag. IsUsed exists, but its meaning is undocumented (?).",
+   "impact": "blocked is derived from Type with the shared D6 table: true for every type without a documented posting endpoint (550, 610, 690, 700, 900, 990, 0; A). A daybook disabled in Horus Office would still look postable.",
+   "label": "D"
+  },
+  {
+   "description": "Some daybook attributes can be written but not read. BankName, UsedForSupplierPayments and UsedForClientDomiciliations exist on daybooks.new but are not returned by daybooks.list/info.",
+   "impact": "They cannot be used to qualify bank journals, and IsUsed should not be assumed to be one of them.",
+   "label": "F"
+  },
+  {
+   "description": "The folder-level 'allow currencies' configuration is not readable through the API.",
+   "impact": "other_currencies_allowed for sales/purchase journals is an assumption, so a foreign-currency invoice can still fail with a 400 at posting time.",
+   "label": "D"
+  },
+  {
+   "description": "Horus lists are not paginated, and daybooks.list has no ModifiedAfter filter.",
+   "impact": "page and size are emulated in memory, and change detection means a full reload. Acceptable because daybooks are few and are cached reference data.",
+   "label": "D"
+  },
+  {
+   "description": "Folders carry no status, enterprise number or currency, and CountryCode is only on folders.info.",
+   "impact": "active and main_currency are constants. company_number is derived for BE only. addresses[].country costs N+1 calls or an approximation.",
+   "label": "F"
+  },
+  {
+   "description": "folders.list Mode semantics depend on the persona. For an accountant, Mode 0 returns every folder of the fiduciary license.",
+   "impact": "The activation picker can list hundreds of folders, which needs search or filtering in the Chift UI. Access rights are enforced by Horus ('What a user can see through the API depends on their access in Horus').",
+   "label": "F"
+  },
+  {
+   "description": "fiscal-years.list does not return IsClosed in the reference; only fiscal-years.info does. The Data model guide nonetheless lists IsClosed among fiscal-year attributes.",
+   "impact": "Get bookyears costs 1 + N calls (cache them). The next_document_numbers emulation cannot filter on 'open' years from the list alone, so it uses an EndDate proxy or the shared .info cache.",
+   "label": "F"
+  },
+  {
+   "description": "Separate credit-note daybook types exist (150/250), but invoices also carry Type 0/1, and the guide allows 200/250 or 100/150 daybooks without saying which Type each accepts.",
+   "impact": "journal_type describes the daybook, not every entry in it: credit notes may sit in 200/100 daybooks (D1). A folder may have no 250/150 daybook. Its customer_refund/supplier_refund journal list is then empty, and create_invoice falls back to the 200/100 daybook with Type = 1 (D1). Read routes therefore scan both sibling types and classify entries by partner-line sign (D1). To be validated with Horus.",
+   "label": "A"
+  },
+  {
+   "description": "One Horus license = one api_url and one token pair, so an integration needs one connection per license.",
+   "impact": "A Chift consumer covers the folders of a single license. A firm or user with several licenses needs several consumers.",
+   "label": "F"
+  }
+ ],
+ "edge_cases": [
+  {
+   "case": "Chift folder_id omitted (several folders selected, one selected, or no selection stored)",
+   "handling": "Shared D7 rule. Exactly one folder selected at activation → use it. No selection stored → POST /folders.list {Mode: 0}; if exactly one folder is returned, use it. Otherwise (more than one selected folder, or several folders returned) → 400 'folder_id required'. Horus requires FolderId on every folder-scoped list or create call.",
+   "label": "D"
+  },
+  {
+   "case": "Daybook Type 0, 690, 700, 900 or 990 (no documented write path)",
+   "handling": "Still return it, so reads such as outstandings and entries can reference it. journal_type follows the shared D6 table: miscellaneous_operation for 690/700, unknown for 0/900/990 (A). blocked = true (D6, A). Exclude blocked journals from Chift's 'auto-select if only one journal' logic; create_misc_operation auto-selects and validates only Type 600 (D6).",
+   "label": "A"
+  },
+  {
+   "case": "Daybook Type 550 Cash or 610 TemporaryMiscOperation",
+   "handling": "Map to financial_operation / miscellaneous_operation (D6). blocked = true by default (D6) until Horus confirms (or a sandbox test shows) that financials.new / miscellaneous-operations.new accept them; neither endpoint restricts DaybookId type.",
+   "label": "A"
+  },
+  {
+   "case": "Unknown daybook Type value returned (not among the 14 documented)",
+   "handling": "journal_type = unknown, blocked = true (D6), and log it; never fail the whole list. The Changes & versioning guide classifies enum additions neither as breaking nor as compatible, but asks for tolerant clients.",
+   "label": "A"
+  },
+  {
+   "case": "No SaleCreditNote (250) or PurchaseCreditNote (150) daybook in the folder",
+   "handling": "No customer_refund/supplier_refund journal is listed. Per D1, create_invoice falls back to the 200/100 daybook (customer_refund → 250, else 200; supplier_refund → 150, else 100) and posts the refund with invoices.*.new Type = 1. Whether Horus accepts this still has to be validated (open question). The 200/100 daybook keeps journal_type customer_invoice / supplier_invoice.",
+   "label": "A"
+  },
+  {
+   "case": "Credit notes stored in a 200 (Sale) or 100 (Purchase) daybook",
+   "handling": "journal_type stays customer_invoice / supplier_invoice: it describes the daybook, not every entry in it (D1). Never infer the document type from the journal. get_invoices scans both sibling types (200 + 250, 100 + 150) and classifies each entry by the partner-line sign (customer: net credit = credit note; supplier: net debit = credit note). For open sales items, TransactionType overrides the sign (D1, A until Horus confirms).",
+   "label": "A"
+  },
+  {
+   "case": "Bank daybook in a foreign currency (WithCurrency = true, CurrencyCode e.g. USD)",
+   "handling": "currency = CurrencyCode. other_currencies_allowed = false, because book-entries.banks.new has no currency field.",
+   "label": "D"
+  },
+  {
+   "case": "WithCurrency = false but CurrencyCode is non-null",
+   "handling": "Treat currency as null (follows the folder) and log the inconsistency.",
+   "label": "A"
+  },
+  {
+   "case": "Bank or Financial daybook with ConcentrationAccount = null, or pointing to an account missing from the cached chart (e.g. Inactive)",
+   "handling": "counterpart_account = null when there is no reference. If the Id is not in the accounts.list cache, resolve it with GET /accounts.info and return its SearchKey even if the account is Inactive (do not hide it).",
+   "label": "D"
+  },
+  {
+   "case": "Several Sale daybooks (e.g. VEN, VEN2)",
+   "handling": "All map to customer_invoice. When journal_id is omitted, create_invoice keeps a daybook only if exactly one candidate remains after the D1 per-invoice_type filter (customer_invoice → 200; customer_refund → 250, else 200). Otherwise it returns 400 'journal_id required', which is consistent with the Chift rule that the journal is auto-set only if one exists.",
+   "label": "D"
+  },
+  {
+   "case": "MiscOperation daybook with IsWages = true (payroll OD)",
+   "handling": "journal_type = miscellaneous_operation. Optionally suffix the name or keep the flag internally so that generic OD auto-selection avoids it.",
+   "label": "A"
+  },
+  {
+   "case": "Unconfirmed entries posted with Number = 0",
+   "handling": "Ignore DocumentNo = 0 when computing max+1 for next_document_numbers.",
+   "label": "D"
+  },
+  {
+   "case": "Unconfirmed API-pushed entries carrying a caller-chosen Number",
+   "handling": "Optionally compute max(DocumentNo) with Filter.ConfirmedOnly = true (book-entries.list or account-histories.list), and still ignore 0. Whether unconfirmed numbers reserve a slot in Horus is undocumented, so validate the default.",
+   "label": "A"
+  },
+  {
+   "case": "Past fiscal year that is still open (accountant has not closed it yet)",
+   "handling": "The default EndDate >= today selection skips it. Include it only if the connector reads IsClosed = false from the fiscal-years.info cache shared with Get bookyears.",
+   "label": "D"
+  },
+  {
+   "case": "Updated invoices or operations get a new book-entry Id",
+   "handling": "No impact on daybook mapping. For numbering emulation, rely on DocumentNo, not on Id counts.",
+   "label": "F"
+  },
+  {
+   "case": "Folder not VAT-liable (IsVatLiable = false) or Legislation = LU",
+   "handling": "vat = null for non-VAT-liable folders. company_number = null (no enterprise-number field on folders; the derivation is BE-only).",
+   "label": "D"
+  },
+  {
+   "case": "Address string not in 'street, number' form, or containing a box",
+   "handling": "Put the full string in street; number and box = null. Never guess.",
+   "label": "A"
+  },
+  {
+   "case": "Accountant user: Mode 0 returns the whole fiduciary portfolio",
+   "handling": "Expected. Chift's selected flag scopes usage. The activation UI should offer search (folders.list supports Filter.FolderName/SearchKey/VatNumber) and can flag the user's own folders via ResponsibleUser.Id.",
+   "label": "F"
+  },
+  {
+   "case": "Selected folder later no longer accessible (rights removed, folder deleted)",
+   "handling": "Absent from folders.list → active = false. A Horus 403 on folder-scoped calls → Chift 400 'folder not accessible with this connection' (D7). A 404 (folder deleted) is mapped the same way (A: which status Horus returns for a deleted or inaccessible folder is undocumented).",
+   "label": "A"
+  },
+  {
+   "case": ".info or .update call by entity Id only (e.g. companies.info, daybooks.update) on a multi-folder consumer",
+   "handling": "Shared D13 guard: check that the returned Data.Folder.Id equals the Chift folder_id (companies.info, book-entries.info, daybooks.info; in this route also accounts.info and fiscal-years.info), otherwise return 400. For .update calls, run the matching .info and check before updating, not after. These calls take no FolderId, so a wrong-folder Id would otherwise pass silently.",
+   "label": "D"
+  },
+  {
+   "case": "Fiscal year EndDate '2017-12-31T23:59:59+00:00'",
+   "handling": "Take the date part as is (2017-12-31). Do not convert timezones, or the end date may shift by one day.",
+   "label": "D"
+  },
+  {
+   "case": "Fiscal year Heading does not reflect the dates (doc example \"2017 - 2018\" for calendar year 2017)",
+   "handling": "name = Heading as is. Use StartDate/EndDate for all date logic; never parse Heading.",
+   "label": "F"
+  }
+ ],
+ "open_questions": [
+  {
+   "question": "What does daybooks IsUsed mean (active, has entries, used for supplier payments?), and can a daybook be deactivated or blocked in Horus Office?",
+   "for_whom": "Horus",
+   "why": "Determines whether IsUsed can drive Chift 'blocked', or whether unused daybooks should be hidden."
+  },
+  {
+   "question": "Can a credit note (invoices.sales/purchases.new Type = 1) be posted into a Sale (200) or Purchase (100) daybook, and can an invoice (Type 0) go into a 250/150 daybook? Must refunds go to a credit-note daybook when one exists? (D1)",
+   "for_whom": "Horus",
+   "why": "Validates the D1 refund fallback (250 → 200, 150 → 100) and confirms that journal_type describes the daybook, not every entry in it."
+  },
+  {
+   "question": "Can the document Type (0 invoice / 1 credit note) be exposed on read (book-entries.list/info or account-histories.list)? (D1)",
+   "for_whom": "Horus",
+   "why": "Credit notes may sit in 200/100 daybooks, so journal_type cannot classify entries. D1 relies on the partner-line sign (A) until the Type is readable."
+  },
+  {
+   "question": "Is there a way to read the next document number per daybook and fiscal year, and what is the DocumentNo/Number format (e.g. YYMM + sequence)? Do unconfirmed entries with a Number reserve that number? Could AutoGenerateNumber be added to invoices.*.new?",
+   "for_whom": "Horus",
+   "why": "next_document_numbers cannot be emulated reliably, and confirmed invoices need a valid Number."
+  },
+  {
+   "question": "Are StartMonth/StartYear/EndMonth/EndYear in book-entries.list and account-histories.list calendar months or accounting periods? Are closing/opening entries (EntryType 810/850/910) dated inside the fiscal year bounds? What does IncludeReport cover?",
+   "for_whom": "Horus",
+   "why": "Correct period bounds for the next_document_numbers emulation and for ledger reads."
+  },
+  {
+   "question": "How can an integrator read whether a folder is 'configured to allow currencies', and is a folder's base currency always EUR?",
+   "for_whom": "Horus",
+   "why": "Needed for other_currencies_allowed and main_currency."
+  },
+  {
+   "question": "Does folders.list return archived or closed folders? What does IsPrivate mean? Is the folder's enterprise number (BCE/KBO) available anywhere?",
+   "for_whom": "Horus",
+   "why": "Needed for FolderItem.active and company_number, and to decide whether IsPrivate folders should be offered at activation."
+  },
+  {
+   "question": "Which HTTP status does Horus return for a FolderId the user cannot access, or for a deleted folder: 403, 404 or 400 ('references non-existing resources')? (D7)",
+   "for_whom": "Horus",
+   "why": "D7 maps Horus 403 to Chift 400 'folder not accessible with this connection'. Any other code Horus uses for the same situation needs the same mapping."
+  },
+  {
+   "question": "Can Cash (550) or TemporaryMiscOperation (610) daybooks receive entries through book-entries.financials.new or miscellaneous-operations.new? What about 690/700, and is CostMiscOperation (700) a kind of miscellaneous operation? (D6)",
+   "for_whom": "Horus",
+   "why": "Decides blocked and journal_type for these types in the shared D6 table. They are currently blocked = true and mapped on assumptions; both endpoints leave DaybookId type unrestricted."
+  },
+  {
+   "question": "Is a suspense or unallocated account configured per bank or financial daybook in Horus Office, and can it be exposed?",
+   "for_whom": "Horus",
+   "why": "Chift unallocated_account."
+  },
+  {
+   "question": "Does fiscal-years.list actually return IsClosed (the Data model guide lists it as a fiscal-year attribute)? If not, could it be added?",
+   "for_whom": "Horus",
+   "why": "Removes the N+1 calls on Get bookyears and lets the numbering emulation filter open years."
+  },
+  {
+   "question": "Are new daybook Type enum values considered a backwards-compatible change that can appear without notice?",
+   "for_whom": "Horus",
+   "why": "Decides whether tolerant mapping of unknown Types is a must-have."
+  },
+  {
+   "question": "For journals that cannot be posted to through the API, the connector lists them with blocked = true, and with journal_type unknown for 0/900/990 (D6). Is that the agreed convention, or should they be hidden?",
+   "for_whom": "Chift",
+   "why": "Consistency with other connectors, and the effect on 'auto-select the only journal' logic."
+  },
+  {
+   "question": "Is next_document_numbers used by any Chift logic or client flow? If not, can the Horus connector return [] by default?",
+   "for_whom": "Chift",
+   "why": "The emulation costs one call per daybook × fiscal year (or one heavy ledger call per year). Under D12, posted invoices are sent confirmed, so the same max(DocumentNo)+1 logic may still be needed on the write side."
+  },
+  {
+   "question": "Should the Horus connector always enable the multiple-folders feature, and should the activation flow let the user pick folders.list Mode (0 vs 1) or flag 'my folders'?",
+   "for_whom": "Chift",
+   "why": "Fiduciary licenses hold many folders, and Mode changes the list for accountants."
+  },
+  {
+   "question": "Confirm that FolderItem.main_currency should be ISO 4217 ('EUR'). The spec says ISO 3166-1.",
+   "for_whom": "Chift",
+   "why": "Doc inconsistency; AccountingInfoOut.main_currency says ISO-4217."
+  }
+ ],
+ "evidence_gaps": [
+  "The Horus reference documents no pagination, rate limit or maximum result size. The absence was checked by grep, but a hidden server-side cap cannot be ruled out without the Support/FAQ or Quickstart pages, which were not provided.",
+  "daybooks IsUsed has no description in the reference or in the raw Notion export.",
+  "The document numbering format and sequencing rules (DocumentNo/Number) are not documented. Examples vary (1904001, 2301016, 201909001, 202409001).",
+  "Folder-level currency configuration ('The folder must be configured to allow currencies') is mentioned, but no endpoint exposes it.",
+  "Daybook CurrencyCode has no description. The NULL = EUR reading is carried over from account-histories/invoices.",
+  "folders IsPrivate and Legislation have no semantic description beyond the filter text. folders.info CountryCode has no documented format (example \"BE\" only).",
+  "Whether credit-note daybooks (150/250) accept Type 0 invoices, or ordinary daybooks accept Type 1, is not stated. The guide only says 'types 200 / 250 for sales and 100 / 150 for purchases'. D1 therefore treats journal_type as a property of the daybook and keeps the refund fallback as an assumption.",
+  "The Data model guide gives a posting endpoint only for types 100/150/200/250/500/590/600. Cash/temporary/system/cost/budget/external daybooks get no write path in the sources, and no explicit prohibition either (financials.new and MO.new do not restrict DaybookId type). The shared D6 table therefore sets blocked = true for all of them (A).",
+  "No source describes what TemporaryMiscOperation (610), SystemMiscOperation (690) or CostMiscOperation (700) daybooks hold. Their miscellaneous_operation mapping in the D6 table is an assumption.",
+  "The Data model guide says a fiscal year describes 'whether the year IsClosed' right after pointing to fiscal-years.list, yet the list schema has no IsClosed. Test the real list response before building the N+1.",
+  "Fiscal-year LastVatClosureDate, LastPurchasesClosureDate, LastSalesClosureDate, LastFinancialsClosureDate and LastMiscOperationsClosureDate are string|null with no format or example (unlike StartDate/EndDate, typed date-time). Parse defensively (assume ISO 8601, A).",
+  "The semantics of the period bounds (StartMonth…EndYear: calendar month vs accounting period) and of account-histories IncludeReport/IsReport are undocumented.",
+  "The Changes & versioning guide lists neither 'adding enum values' as breaking nor as backwards-compatible.",
+  "Correction (D15): GET /book-entries.info (one book entry by Id) is documented in the reference, which has 72 endpoints in total; an earlier draft wrongly called it undocumented. It is not needed for this route, but its Data.Folder.Id supports the D13 guard in other routes.",
+  "Which HTTP status Horus returns for an inaccessible versus a deleted FolderId is not stated per endpoint (every endpoint lists 400, 403 and 404 generically). D7 maps only 403.",
+  "Not provided: the Quickstart, Register your integration, Support & FAQ and Changelog pages, the Postman collection, and any webhook docs. Any folder-access or licensing nuances they contain are unknown."
+ ],
+ "ba_insights": [
+  "Terminology map: Horus license = one fiduciary or SMB database with its own api_url, i.e. one Chift consumer connection. Horus folder = 'the accounting record of one company', i.e. the Chift folder (legal entity). Horus company = a customer, supplier or beneficiary of the folder, i.e. a Chift client or supplier, NOT a Chift folder. Horus daybook = Chift journal. Horus fiscal year = Chift bookyear. Horus account SearchKey = account number.",
+  "The daybook Type is the routing key for the whole connector, not just this route. The Data model guide says 'The daybook Type drives which endpoint you use to post entries' (100/150 → invoices.purchases.new, 200/250 → invoices.sales.new, 500 → book-entries.banks.new, 590 → book-entries.financials.new, 600 → book-entries.miscellaneous-operations.new). The Type → journal_type table built here is the shared D6 table. Create invoice, Create financial entry, Create misc operation and the outstanding-items journal_type all reuse it, so blocked and auto-selection agree everywhere: create_misc_operation auto-selects only Type 600, and create_invoice filters by invoice type with the D1 refund fallback.",
+  "Distinguish what the docs prove from what they merely don't mention. Only banks.new hard-restricts its daybook type ('Must be of type Bank (= 500)'). For Cash (550) and temporary MO (610) the docs neither allow nor forbid posting, so 'blocked' for them is an assumption to test in the sandbox, not a deduction. D6 therefore sets blocked = true (A) for every type without a documented posting endpoint.",
+  "Refund daybooks are distinct in Horus (150 PurchaseCreditNote, 250 SaleCreditNote), which lines up with Chift customer_refund/supplier_refund. But Horus invoices also carry their own Type (0 invoice / 1 credit note), so credit notes may sit in 200/100 daybooks, for example when a folder has no 250/150 daybook and create_invoice falls back to 200/100. journal_type therefore describes the daybook, not every entry in it (D1): never infer 'refund' from the journal alone. Read routes scan both sibling types and classify by partner-line sign (D1, A until Horus confirms).",
+  "Why several calls for 'Get journals': daybooks.list only returns a reference to the concentration account ({Type: 'Accounts', Id}), not its number, and daybooks.list does not support sideloading. So counterpart_account needs the cached chart of accounts. next_document_numbers needs fiscal years plus a scan of entries: either book-entries.list per daybook × year, or account-histories.list once per year grouped by DaybookSearchKey (fewer calls, bigger payload). This is the case's 'pull data from multiple endpoints' warning in practice.",
+  "Keep track of which fields live on .list and which only on .info. IsClosed (fiscal years) and CountryCode (folders) exist only on the detail endpoints, which creates N+1 patterns. A filter like 'open fiscal years' cannot be applied from the list alone; this is easy to miss when designing a call sequence.",
+  "How the folder travels: nearly every folder-scoped .list/.new endpoint takes FolderId in the JSON body (POST). Exceptions: folders.list and countries.list (not folder-scoped), ibans.list (CompanyId), book-entries.documents(.annexes).new (BookEntryId). Updates (daybooks.update, accounts.update, companies.update) and .info reads identify the entity by its own Id. .info is GET ?Id=, except POST cost-schemas.info and POST cost-sections.info, which take Id in the body. Responses carry Folder {Type: 'Folders', Id}, so every Id-only call checks Data.Folder.Id against the Chift folder_id and returns 400 on a mismatch (D13). folder_id itself is resolved with one rule in every route (D7).",
+  "folders.list Mode: for an accountant, 0 = all folders of the license and 1 = only folders they are responsible for. For an entrepreneur, both return all folders they have access to. Recommendation: Mode 0 plus Chift's activation picker ('selected'), so an accountant can connect any client folder. Compare ResponsibleUser.Id with users.me Id to pre-flag 'my folders' without a second call.",
+  "Cache reference data per folder, as Horus itself recommends ('Reference data changes rarely. Load it once and cache it per folder'): fiscal years, daybooks, accounts, companies, vehicles, cost schemas and sections. Journals, chart of accounts and bookyears should therefore be served from a short-lived cache, which also absorbs the N+1 calls (folders.info, fiscal-years.info).",
+  "Fiscal years matter beyond bookyears. Their LastSalesClosureDate, LastPurchasesClosureDate, LastFinancialsClosureDate, LastMiscOperationsClosureDate and LastVatClosureDate should be checked before every write ('Check closure dates before posting'), and Filter.Dates finds the year containing an entry date. They are date-level locks per daybook family, so they should not be turned into journal.blocked.",
+  "Numbering trap: entries pushed through the API are unconfirmed by default in Horus, and Number 'can be 0 if not confirmed'. Under D12 the connector maps Chift 'posted' (the Chift default) to Confirmed = true. Only 'draft', or the per-consumer 'always push unconfirmed' setting, keeps Horus's review-first default with Number 0. A confirmed invoice therefore needs a real number, taken from Chift's invoice_number or from the same max(DocumentNo)+1 emulation described here (A), because Horus gives no sequence endpoint. Bank, financial and MO endpoints can instead let Horus generate the number (AutoGenerateNumber, only with Confirmed = true).",
+  "Explaining 'workaround' to a client: everything a user sees in Horus (journal list, types, IBAN, currency, folders, VAT) comes through natively. What is emulated is Chift metadata that Horus does not model (blocked, unallocated account, next numbers, currency permission), and each emulated value carries a confidence label. Under the shared D11 scale, Folders stays supported (one native list, optional enrichment for one minor field), while Journals and Bookyears are workarounds (emulated pagination and numbering, derived flags, per-request N+1).",
+  "Related Chift routes covered by the same Horus endpoints: Chift 'Get Folder' (by id) → GET /folders.info. Chift 'Create journal' → POST /daybooks.new, whose Type enum is restricted to 100/150/200/250/500/590/600, which supports the 'postable types' list. Note this for the full connector scope."
+ ],
+ "changes_applied": [
+  "D1: journal_type field rule now states that journal_type describes the daybook, not every entry in it. It explains that credit notes may sit in 200/100 daybooks (invoice Type 0/1) and that consumers must not infer the document type from the journal. Evidence extended with the Posting guide quotes ('Type is 0 for an invoice and 1 for a credit note'; 'types 200 / 250 for sales and 100 / 150 for purchases').",
+  "D1: credit-note limitation impact rewritten: the refund fallback 250 → 200 / 150 → 100 with Type = 1, and read routes scan both sibling types and classify by partner-line sign. Label kept A.",
+  "D1: edge case 'No 250/150 daybook' rewritten to the D1 fallback. New edge case 'Credit notes stored in a 200/100 daybook' (A), covering partner-line sign classification and the TransactionType override.",
+  "D1: edge case 'Several Sale daybooks' aligned to the D1 per-invoice_type filter and 400 'journal_id required'. Label F → D because the fallback is a decision layered on the Chift rule.",
+  "D1: Horus open question on Type 1 in 200/100 and Type 0 in 250/150 tagged (D1), with its 'why' tied to the fallback. Added a Horus open question asking Horus to expose the document Type on read.",
+  "D1: summary, Get journals one_line, the refund ba_insight and the credit-note evidence gap updated with the 'journal_type describes the daybook' statement.",
+  "D6: journal_type rule replaced by the shared D6 table with per-row labels. 700 CostMiscOperation now maps to miscellaneous_operation (A); it was unknown before. 0/900/990/unknown → unknown (A).",
+  "D6: blocked rule restated as the shared D6 rule: blocked = true for 550, 610, 690, 700, 900, 990, 0 and unknown Types (A). It also notes that create_misc_operation auto-selects and validates only Type 600, matching the flag.",
+  "D6: edge cases for Types 0/690/700/900/990, 550/610 and unknown Types updated (690/700 → miscellaneous_operation; D6 citations). Call_sequence 'Get journals 4', the daybooks.list role, the daybook-flags limitation, the routing-key and 'proven vs. not mentioned' ba_insights, and the posting-type evidence gap updated. New evidence gap on what 610/690/700 daybooks hold. The Horus 550/610 open question extended to 700 (D6). The Chift list/hide open question now states the D6 convention.",
+  "D7: journals and bookyears folder_id rules, call_sequence 'Get journals 0' and 'Get bookyears', and the FolderId required-field row rewritten to the shared D7 rule. Added the no-selection fallback via folders.list {Mode: 0}, 400 'folder_id required', and Horus 403 → 400 'folder not accessible with this connection'. folder_id evidence extended with the 403 guide text and the Chift folder_id description.",
+  "D7: folders.list role/cardinality and the Mode required-field row mention the D7 fallback call. The 'Get Folders 3' step notes that the stored selection drives the D7 default. The folder_id-omitted edge case was rewritten. The 'folder no longer accessible' edge case now maps 403 per D7 and 404 the same way, labelled A (it was D before).",
+  "D7: new Horus open question and evidence gap on which status Horus returns for an inaccessible or deleted FolderId (D7 maps only 403).",
+  "D11: verdict_rationale calibrated with the D11 scale: Folders explicitly supported (optional N+1 for a minor field), Journals and Bookyears workaround (emulation, per-request N+1). Get Folders and Get Bookyears one_lines plus the 'explaining workaround' ba_insight cite D11. Verdicts unchanged.",
+  "D12: numbering limitation impact and the 'numbering trap' ba_insight rewritten. 'posted' (the Chift default) → Confirmed = true, so the Number-0 mitigation only covers 'draft' and 'always push unconfirmed'; confirmed invoices need a real Number plus the book-entries.list Filter.DocumentNo duplicate pre-check. The book-entries.list role notes the D12 pre-check use (Filter.DocumentNo added to its evidence). The Chift next_document_numbers question's 'why' notes the D12 dependency.",
+  "D13: daybooks.info, accounts.info and fiscal-years.info roles/evidence now require the Data.Folder.Id = folder_id check (400 otherwise). Applied to the counterpart_account and bookyears closed rules, the call_sequence steps 'Get journals 2' and 'Get bookyears', and the .info Id required-field row. The Id-only edge case now returns 400 and checks before an update, not after. The FolderId ba_insight cites D13.",
+  "D15: no '71' was present. The evidence gap that called GET /book-entries.info undocumented is replaced with a correction stating it is documented (72 endpoints in total, verified: 72 '## ' headers, GET /book-entries.info at reference line 2748).",
+  "Summary rewritten to cover D6, D1, D7 and D13 consistently. Previous changes_applied and rejected_findings entries (from the earlier verification pass) were replaced by this harmonisation log; rows not touched by a decision are unchanged."
+ ],
+ "rejected_findings": []
+}

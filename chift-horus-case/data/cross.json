@@ -1,0 +1,1050 @@
+{
+ "principles": [
+  {
+   "topic": "Protocol style",
+   "finding": "Horus is an RPC-style API, not a REST one. Every method is called as {api_url}/{category}.{action}, over HTTPS only. The guide documents these action suffixes: .list (filtered list), .info (one entity by Id), .new, .update, .delete / .clear (remove one / all related entities) and .download (file bytes). The reference also uses .me, .main, .outstanding and .next-number, and POST /matching has no suffix. Across the 72 endpoints there are 23 GET, 47 POST and 2 DELETE. There is no PUT or PATCH.",
+   "label": "F",
+   "evidence": "Guide: Making requests: 'The API consists of JSON-RPC-style methods exposed over HTTPS, in the form: {api_url}/{category}.{action}'; suffix table '.list Retrieve a filtered list of entities. .info Retrieve a single entity by its Id'; 'All methods must be called over HTTPS.' horus_intro.md: 'HTTPS, JSON-RPC style methods such as companies.list or invoices.sales.new'. Method counts come from the 72 '## METHOD /path' headers in horus_reference_v2.txt (GET /book-entries.info included)."
+  },
+  {
+   "topic": "GET vs POST usage",
+   "finding": "The guide states the rule:\n- Simple reads (.info, .me) are GET with query-string parameters.\n- Reads with complex filters (most .list) are POST with a JSON body, so arguments never exceed the URL length.\n- Creation and modification are POST.\n- Deletion is DELETE or POST, depending on the endpoint.\nExceptions in the reference: GET /users.list is a list without a body. POST /cost-schemas.info and POST /cost-sections.info take the Id in a body. POST /ibans.delete and POST /ibans.clear delete through POST, while DELETE /book-entries.miscellaneous-operations.delete and DELETE /library.documents.delete take a query Id. So the HTTP verb does not tell whether a call reads or writes. The method name does.",
+   "label": "F",
+   "evidence": "Guide: Making requests: 'Simple reading ( .info , .me ) GET Query string parameters, e.g. companies.info?Id=…'; 'Reading with complex filters (most .list ) POST Request body'; 'Deletion DELETE or POST See each endpoint in the API Reference'; 'Why POST for reading? ... never exceed the maximum URL length.' POST /cost-schemas.info → body Id *; POST /ibans.delete: 'Remove an iban from an existing company.'; DELETE /library.documents.delete → param[query] Id *."
+  },
+  {
+   "topic": "Authentication: OAuth 2 authorization code flow",
+   "finding": "Horus uses an OAuth 2 authorization code flow, with documented quirks:\n1. Send the browser to GET https://my-horus.com/fr/api/oauth2/authorize (or /nl/ for Dutch pages) with client_id, response_type=code, a registered redirect_uri and a recommended random state.\n2. The user logs in, selects ONE license and authorizes the integration.\n3. Horus redirects back with code (valid 2 minutes), state and api_url, or with error=access_denied.\n4. The server exchanges the code at POST {api_url}/oauth2/access_token (form-urlencoded) with client_id, client_secret, code, redirect_uri and grant_type=auth_code. This is not the usual 'authorization_code'.\n5. The response holds token_type Bearer, expires_in 3600, access_token and refresh_token.\nAll 72 endpoints require 'Authorization: Bearer ...'. The documented authorization request has no scope parameter.",
+   "label": "F",
+   "evidence": "Guide: Authorization flow: 'GET https://my-horus.com/fr/api/oauth2/authorize'; parameters client_id, response_type 'Always code', redirect_uri 'must be registered for your integration', state 'Recommended'; 'code The authorization code, valid for 2 minutes.'; 'POST {api_url}/oauth2/access_token'; 'The Horus API expects grant_type=auth_code , which differs from the value used by many OAuth 2 libraries.'; response field 'expires_in Lifetime of the access token, in seconds (1 hour).' Every endpoint: 'RESPONSE 401: Unauthorized – invalid, expired or missing access token.'"
+  },
+  {
+   "topic": "Token lifetime and refresh",
+   "finding": "Access tokens expire 1 hour after they are issued. Every access token comes with a refresh token. Sent to the same token endpoint with grant_type=refresh_token, it returns a NEW access token and a NEW refresh token without involving the user.\nRefresh tokens are single-use: once used, the old one is dead, and losing the latest one forces re-authorization. They stay valid until the user revokes them or uninstalls the integration.\nHorus recommends:\n- refresh a few minutes before expiry;\n- on a 401, refresh once and retry;\n- serialise refreshes per connection (two concurrent refreshes with the same token make one of them fail);\n- persist the new pair before using it;\n- encrypt tokens at rest.\nNo revocation endpoint and no absolute refresh-token expiry are documented.",
+   "label": "F",
+   "evidence": "Guide: Token lifecycle: 'They expire 1 hour after they are issued ( expires_in: 3600 , in seconds).'; 'grant_type Must be refresh_token .'; 'A refresh token can be used only once. Always save the new refresh token'; 'If you lose it, the user has to authorize your integration again.'; 'Refresh tokens remain valid until the user revokes them or uninstalls your integration.'; 'Serialise refreshes per connection, with a lock or a queue.'; 'Save the new token pair before using the new access token'."
+  },
+  {
+   "topic": "License-specific base URL",
+   "finding": "Each license (one fiduciary or SMB) has its own database, so it has its own API URL. The flow always starts on the central portal my-horus.com. The selected license's base URL comes back as api_url in the redirect, and from then on the token exchange, token refreshes and all API calls go to that api_url. It must be stored with the connection and never hard-coded: https://api.fiduciary.example in the docs is a placeholder, and the reference's default server 'https://enter-your-api-url.invalid' is deliberately invalid. An integration can connect any number of licenses. Each connection has its own api_url, access token and refresh token, stored together as one record per license.",
+   "label": "F",
+   "evidence": "Guide: Authentication overview: 'each license has its own API URL'; '4. From then on, every request goes to that api_url : the token exchange, token refreshes and all API calls.'; 'Never hard-code the API URL'; 'the user goes through the authorization flow once per license, each connection has its own api_url , access token and refresh token'. Guide: Testing the API: 'Replace the default value https://enter-your-api-url.invalid with your license's api_url'."
+  },
+  {
+   "topic": "License and user model",
+   "finding": "A license is one Horus Office customer, either a fiduciary (accounting firm) or an SMB, with its own database and endpoint. licenses.main returns the main fiduciary/SMB license and licenses.me returns the license linked to the authenticated user; IsMain tells them apart. Users are either accountants working in Horus Office (IsAccountant: true) or entrepreneurs using Horus Mobile, and what a user can see through the API depends on their access in Horus. At consent the user authorizes the integration 'to access the data available through their account'. Deduction (D): API rights are those of the authorizing user, and one authorization opens one license database that can hold many folders. No integration-level scoping is documented.",
+   "label": "F",
+   "evidence": "Guide: Data model: 'A license represents a Horus Office customer: a fiduciary (accounting firm) or an SMB. Each license has its own database and its own API endpoint'; 'Users are either accountants using Horus Office ( IsAccountant: true ) or entrepreneurs using Horus Mobile. What a user can see through the API depends on their access in Horus.' Guide: Authorization flow, Step 2: 'authorizes your integration to access the data available through their account.' GET /licenses.main → Data.IsMain; GET /users.me → Data.IsAccountant."
+  },
+  {
+   "topic": "Data model hierarchy",
+   "finding": "The guide gives the object tree:\n- License → Users and Folders.\n- Each Folder → Fiscal years, Daybooks, Accounts (its own chart of accounts), Companies (→ IBANs), Vehicles, Cost schemas (→ Cost sections), Book entries and Library documents.\n- Book entries → Account history lines (→ Cost histories) and Documents (a main document plus annexes).\n- Library documents are not linked to any entry.\nAlmost every endpoint requires a FolderId.",
+   "label": "F",
+   "evidence": "Guide: Data model tree: 'License (fiduciary / SMB) └── Users └── Folders ─ one per company whose accounts are kept ├── Fiscal years ├── Daybooks ... ├── Book entries ── Account history lines ── Cost histories │ └── Documents (main document + annexes) └── Library documents'; 'Almost every endpoint requires a FolderId .'"
+  },
+  {
+   "topic": "Folder = accounting dossier of one company",
+   "finding": "A Horus Folder is the accounting record of one company: its configuration, chart of accounts, daybooks and entries. It carries Legislation, VatNumber, Language and the WithAnalytics and WithAssets module flags.\nEndpoints that address an object by its own Id, or by a parent other than the folder, take no FolderId:\n- the GET *.info reads;\n- POST cost-schemas.info and cost-sections.info;\n- companies.update, accounts.update, daybooks.update;\n- ibans.list (CompanyId);\n- book-entries.documents.new and .annexes.new (BookEntryId);\n- the two DELETE endpoints;\n- matching.next-number.* (Id).\ninvoices.sales.outstanding.info is ambiguous: the page text and the guide say the FolderId is required, but its only other query parameter is an optional, unnamed 'Id'.",
+   "label": "F",
+   "evidence": "Guide: Data model: 'A folder is the accounting record of one company: its configuration, chart of accounts, daybooks and entries.'; 'Folders also tell you which optional modules are enabled, such as WithAssets and WithAnalytics .' POST /folders.list → Data.Legislation enum['BE', 'LU']; POST /ibans.list → CompanyId * only; POST /book-entries.documents.new → BookEntryId *; GET /invoices.sales.outstanding.info: 'The folder id is always required' with params Id (optional), BookEntryId, BookEntryNumber; Guide: Outstanding items & matching: 'invoices.sales.outstanding.info requires the FolderId and one of'."
+  },
+  {
+   "topic": "Accountant vs entrepreneur access",
+   "finding": "Which folders a user sees depends on their role and on the folders.list Mode:\n- Mode 0: all folders for an accountant; all folders the entrepreneur has access to.\n- Mode 1: only the folders an accountant is responsible for; for an entrepreneur, the same set as Mode 0.\n'Confirmed' means confirmed by the accountant. A 403 covers both user and integration permissions.",
+   "label": "F",
+   "evidence": "POST /folders.list → Mode: '`0`: All folders - For the accountant: All folders. - For the entrepreneur: All folders to which she/he has access. - `1`: My folders - For the accountant: All folders for which she/he is responsible. - For the entrepreneur: All folders to which she/he has access.' (same table in Guide: Data model). Guide: Responses & errors: '403 Forbidden: the user or integration is not allowed to access this resource.' POST /book-entries.list → Filter.ConfirmedOnly: 'Include only book entries confirmed by the accountant.'"
+  },
+  {
+   "topic": "Horus terminology (trap)",
+   "finding": "Several Horus terms look like Chift terms but mean something else (definitions from the Data model guide):\n- Folder: the accounting record of one company (Chift's folder).\n- Company: a counterparty of the folder: a customer, supplier or beneficiary (e.g. an employee receiving salaries). One record holds the customer and supplier roles as flags. The guide calls companies 'the legal entities a folder deals with', so a Company is a third party, not the entity whose books are kept.\n- Daybook: an accounting journal. Its Type decides which endpoint posts into it.\n- Account: a general-ledger account of the folder, identified by a unique search key that is usually the account number.\n- Cost schema: an analytical dimension (e.g. DEPARTMENT), up to 8 per folder.\n- Cost section: a value within a schema (e.g. OFFICE).\n- Cost history: the analytical distribution of account history lines.\n- Cost distribution key: a predefined distribution configured in Horus Office.\n- Book entry: an accounting transaction in a folder, in a daybook, at a date, possibly linked to a document.\n- Account history: one detailed line of an entry (one per account movement).\n- MatchNo: the matching number shared by lines that offset each other.\n- Library document: a file in the folder's library, not linked to any entry.",
+   "label": "F",
+   "evidence": "Guide: Data model: 'Companies are the legal entities a folder deals with: customers, suppliers and beneficiaries (e.g. employees receiving salaries).'; 'A daybook is an accounting journal.'; 'Each account is identified by a unique search key, which is usually the account number'; 'a cost schema is an analytical dimension (e.g. DEPARTMENT ). A folder can use up to 8 cost schemas'; 'A book entry (accounting entry) is an accounting transaction in a folder, in a daybook, at a given date.'; 'The entry's detailed lines are its account history lines'. Guide: Outstanding items & matching: 'by giving them the same matching number ( MatchNo )'. POST /companies.new → IsCustomer *, IsSupplier *."
+  },
+  {
+   "topic": "Identifiers",
+   "finding": "All identifiers (Id, FolderId, CompanyId…) are GUIDs. Many entities also have a human-readable SearchKey, unique within the folder. Posting payloads mix the two: FolderId, DaybookId and CompanyId are GUIDs, but accounts and cost schemas/sections are given by search key. Daybooks have search keys such as ACH or VEN. outstanding.info takes the entry number written {DaybookSearchKey}-{Number} (e.g. VEN-202409001). Reads expose the number as a numeric DocumentNo, and outstanding.info returns BookEntryNumber ('2205002') and DaybookSearchKey ('SALES') as separate fields. Number and DocumentNo are numeric. Several example GUIDs in the docs contain non-hex characters and one is upper-case, so the examples do not follow strict GUID syntax.",
+   "label": "F",
+   "evidence": "Guide: Making requests: 'All identifiers ( Id , FolderId , CompanyId …) are GUIDs.' Guide: Data model: 'Many of them also have a human-readable search key ( SearchKey ), unique within the folder. Accounts and cost schemas/sections are referenced by search key in posting endpoints.'; 'Daybooks are identified by a SearchKey (e.g. ACH , VEN ).' Guide: Outstanding items & matching: 'formatted as {DaybookSearchKey}-{Number} (e.g. VEN-202409001 )'. GET /invoices.sales.outstanding.info → Data.BookEntryNumber example '2205002', Data.DaybookSearchKey example 'SALES'. Example ids 'jdhrk2be-8559-488a-452r-eea0dd4a735b', 'djpg65d4-12e7-4ec4-bede-f03859bccpfm', '09B81C9F-3B5E-EF11-874B-009337BD8E44'."
+  },
+  {
+   "topic": "Content types and compression",
+   "finding": "Request bodies can be JSON (recommended), application/x-www-form-urlencoded, or multipart/form-data for file uploads. The reference itself declares only JSON and multipart bodies. Gzip is available on every endpoint and 'highly recommended'. The guide says to send a 'Content-Encoding: gzip' header with the request and the response comes back gzipped. General HTTP knowledge, not a Horus fact: response compression is normally requested with Accept-Encoding, and Content-Encoding on a request usually declares a compressed request body. The exact header behaviour must be tested (A).",
+   "label": "F",
+   "evidence": "Guide: Making requests: 'Bodies can be sent as JSON or URL-encoded data.'; 'We strongly recommend JSON'; 'Gzip compression is available on every endpoint and highly recommended to reduce payload sizes. Add a Content-Encoding: gzip header to your request and the response will be gzipped automatically.' horus_reference.txt: only 'REQUEST BODY (application/json)' and 'REQUEST BODY (multipart/form-data)' occur."
+  },
+  {
+   "topic": "Response envelope",
+   "finding": "Reads return a top-level 'Data': an object for one entity, an array for a list. With sideloading, related entities come back next to Data under 'Included'. Creates and updates return only the identifier, as a top-level 'Id'.\nExceptions in the reference:\n- POST /cost-sections.new returns Data.Id.\n- POST /matching returns Data.MatchNo.\n- ibans.delete, ibans.clear and library.documents.delete return 200 with no body.\n- The misc-operation DELETE returns an Id.\n- Some 'list' calls return an aggregate object rather than an array: cost-histories.list, account-balance.list, customers/suppliers.outstanding.\n- Downloads return raw bytes, not JSON.",
+   "label": "F",
+   "evidence": "Guide: Responses & errors: 'Responses containing information are JSON objects with the payload under a top-level Data key. Data is an object for single entities and an array for lists.'; 'When sideloading is used, related entities are returned next to Data under an Included key.'; 'Requests that create or update an entity return only its identifier'. POST /cost-sections.new → Data.Id; POST /customers.outstanding → Data.{SumDebit, SumCredit, AccountHistories}; POST /ibans.clear → 'RESPONSE 200: OK' (no schema). Guide: Documents & attachments: 'return the raw bytes of the file, not JSON.'"
+  },
+  {
+   "topic": "Reference objects",
+   "finding": "Related objects come back as a {Type, Id} reference rather than embedded. They are resolved with the matching .info endpoint, or by sideloading where available. Type values seen: Users, Folders, Companies, Accounts, Ibans, Daybooks, CostSchemas, CostSections, BookEntries, AccountHistories, Documents, Vehicles. The reference has inconsistencies: CostSections is a plain string array, MasterCostSection has no sub-schema, and CostHistories is typed as an object although the text calls it 'a list'.",
+   "label": "F",
+   "evidence": "Guide: Responses & errors: 'Related entities are represented by a type/id reference'; 'Use the matching .info endpoint, or sideloading where available, to retrieve the related entity.' GET /companies.info → Data.MainIban {Type 'Ibans', Id}; POST /account-histories.list → Data.BookEntry {Type 'BookEntries', Id}; POST /cost-sections.list → 'CostSections: array[string] // Child cost sections'; POST /cost-histories.list → 'CostHistories: object' versus 'It will also contain a list of all cost histories.'"
+  },
+  {
+   "topic": "Sideloading",
+   "finding": "Sideloading is now documented. Add a top-level 'Include' parameter to the JSON body containing the dot-notation path of a relationship property (e.g. 'CompanyDetail.Company'), or several paths separated by commas ('CompanyDetail.Company,Daybook,Folder'). The related entities come back in 'Included', indexed by object type (e.g. Included.Companies[]), and are resolved by Type, then Id. It works on exactly 4 endpoints: book-entries.list, account-histories.list, companies.list and invoices.sales.outstanding.list. Other endpoints only on request to Horus.\nStill open (?):\n- 'Include' is not declared in any request schema of the reference.\n- Valid paths per endpoint are not listed beyond the examples.\n- It is not stated whether array relations (a book entry's AccountHistories, a company's Ibans) or deeper paths can be sideloaded.\n- Which fields an Included entity carries is not specified.\nSeparate mechanism: account-histories.list has opt-in Filter.Include*Detail booleans that enrich each line inline.",
+   "label": "F",
+   "evidence": "Guide: Sideloading: 'To sideload a relationship, add an Include parameter to the JSON body, containing the dot-notation path of the relationship property'; 'The related entities are returned in an Included property, indexed by object type'; 'Pass several paths as a comma-separated value'; 'Sideloading is currently supported on: book-entries.list account-histories.list companies.list invoices.sales.outstanding.list'; 'If you need it on another endpoint, contact us'. No 'Include' property in any REQUEST BODY of horus_reference.txt. POST /account-histories.list → Filter.IncludeCompanyDetail: '*FALSE* by default'."
+  },
+  {
+   "topic": "Pagination",
+   "finding": "No endpoint can be paged. Across all 72, the only query parameters are Id, BookEntryId, BookEntryNumber and UseAlternateHeading. No request body has a page, size, offset, cursor or limit field, no response carries a total, and none of the 15 guides mentions paging. Lists return the full Data array. Volume is held down only by:\n- mandatory windows (month/year periods on the history endpoints, CreatedAfter/CreatedBefore on documents.list);\n- ModifiedAfter incremental sync on 3 endpoints;\n- gzip, which the guide recommends 'for large ledgers'.\nWhether the server caps or truncates large results is not documented (?).",
+   "label": "F",
+   "evidence": "Scan of every request property and parameter in horus_reference_v2.txt (GET /book-entries.info takes only Id); a grep of horus_guides.md for page/offset/cursor/limit finds no paging. POST /account-histories.list → StartMonth *, StartYear *, EndMonth *, EndYear *; POST /documents.list → CreatedBefore *, CreatedAfter *. Guide: Reading accounting data: 'Enable gzip compression for large ledgers.'"
+  },
+  {
+   "topic": "Filter semantics",
+   "finding": "Most .list endpoints take a Filter object. String filters use 'contains' unless stated otherwise, an entity must match every filter given (logical AND), and omitted or null filters are ignored. Documented exceptions:\n- equals: VatNumber on folders and companies (which also needs IsVatLiable=true), Iban on companies and daybooks, cost-section SearchKeys, CountryCodes and CountryNames.\n- starts with: SearchKeys on accounts.list, and AccountSearchKeys on account-balance and account-histories.\n- at least one of the words (OR): library Title and Search.\nCase sensitivity is not stated. Periods can only be set to the month.",
+   "label": "F",
+   "evidence": "Guide: Making requests: 'filters on strings use a contains comparison ... unless stated otherwise in the API Reference; an entity must match all specified filters to be returned; omitted or null filters are ignored.' POST /companies.list → Filter.VatNumber: 'using the *equals* clause - *IsVatLiable* must be set to *true*'; POST /daybooks.list → Filter.Iban: 'using the *equals* clause'; POST /accounts.list → SearchKeys: 'matching the *starts with* clause'; POST /library.documents.list → Title: 'containing (at least) one of the words provided'."
+  },
+  {
+   "topic": "Incremental synchronisation",
+   "finding": "Horus documents a ModifiedAfter-based sync: run a full load once and record its start time; on the next run, pass that time as Filter.ModifiedAfter and process only what changed; store the new start time. In the reference only companies.list, account-histories.list and book-entries.list have ModifiedAfter/ModifiedBefore, although the guide speaks of 'Many lists' and 'among others' (?). Companies, book entries, account histories and outstanding lines expose LastModifiedDate.\nCaveats:\n- (D) The history endpoints still require a month window, so ModifiedAfter only narrows results inside it.\n- Updated invoices and operations get a NEW id, so Horus says to reconcile on daybook and entry number.\n- (D) No deletion feed or tombstone is documented, so deleted misc operations and replaced ids cannot be detected through ModifiedAfter.",
+   "label": "F",
+   "evidence": "Guide: Reading accounting data: '1. Run a full load once and record the time at which you started it. 2. On the next run, pass that time as ModifiedAfter and only process what changed.'; 'available on companies.list , book-entries.list and account-histories.list among others'; 'do not rely on the Id alone to detect changes; also reconcile on business identifiers such as the daybook and the entry number.' Guide: Making requests: 'Many lists also offer ModifiedAfter / ModifiedBefore filters'. POST /companies.list → Filter.ModifiedAfter; POST /book-entries.list → Data.LastModifiedDate: 'Date at which the record was last modified in the database.'"
+  },
+  {
+   "topic": "Defaults and opt-in flags",
+   "finding": "Several filters leave data out by default: future fiscal years, inactive sections and vehicles, VAT, cost, match and company details, and unused accounts. Titles and report lines are included by default. Lists include unconfirmed entries by default; ConfirmedOnly=true restricts them to validated figures.",
+   "label": "F",
+   "evidence": "POST /fiscal-years.list → IncludeFuture: '*FALSE* by default'; POST /cost-sections.list → IncludeInactive: '*FALSE* by default'; POST /account-balance.list → IncludeTitle: '*TRUE* by default'; POST /account-histories.list → IncludeReport: '*TRUE* by default'. Guide: Reading accounting data: 'By default, lists include unconfirmed entries, i.e. entries not yet validated by the accountant.'"
+  },
+  {
+   "topic": "Update semantics",
+   "finding": "Two different rules apply.\n- Master-data .update endpoints (companies, accounts, daybooks) and misc-operation lines.update are partial. A field left out or set to null keeps its value; an empty non-null string erases it.\n- Invoice and operation updates are full replacements: send the whole entry (BookEntryId plus the same required fields as creation).\nWhat master-data updates can change is narrow: for daybooks only SearchKey and Heading; for accounts only Heading, AlternateHeading and the personal-share fields (the account SearchKey cannot change).",
+   "label": "F",
+   "evidence": "Guide: Making requests: 'null or omitted → the current value is kept'; '(empty, non-null string) → the current value is erased.' POST /companies.update: '**Provide only the fields you want to update, or leave their value to *NULL* !**'. Guide: Posting sales & purchase invoices: 'Unlike master data updates (companies, accounts…), invoice updates are not partial: send the full invoice as it should be after the update.' Guide: Bank, financial & miscellaneous operations: lines.update 'Partial update rule applies.' POST /accounts.update → AccountId *, Heading, AlternateHeading, HasPersonalShare, PersonalShare."
+  },
+  {
+   "topic": "Updating a book entry creates a new id",
+   "finding": "Updating an invoice, or a misc, bank or financial operation, generates a NEW book entry and returns its id. The stored id must be replaced, and the original attachment is deleted, so the document must be sent again if it should be kept. Horus therefore advises not to rely on the id alone when syncing, and to reconcile on daybook plus entry number. Misc-operation lines.update is worded differently ('the book entry's id', not 'newly generated'), so it most likely keeps the id (D). It cannot change debit or credit amounts.",
+   "label": "F",
+   "evidence": "Guide: Responses & errors: 'Updating an invoice or an operation ( invoices.*.update , book-entries.*.update ) generates a new book entry. The response contains the new book entry's Id: replace the Id stored on your side.' POST /invoices.sales.update: 'The result will contain the **newly** generated book entry's id.' and '(the original attachment will be deleted in both cases)'. POST /book-entries.miscellaneous-operations.lines.update: 'The result will contain the book entry's id.'; 'The update doesn't allow the modification of the debit and credit amount.'"
+  },
+  {
+   "topic": "Delete constraints",
+   "finding": "Misc operations are the only accounting entries that can be deleted, and only while unconfirmed and if they were created through the API. Invoices, bank and financial operations, companies, accounts and daybooks have no delete endpoint. Library documents and IBANs can be removed.",
+   "label": "F",
+   "evidence": "DELETE /book-entries.miscellaneous-operations.delete: 'The book entry must be non-confirmed, and have been injected through the API.' Guide: Bank, financial & miscellaneous operations: 'Only for unconfirmed entries created through the API.' Guide: Data model: 'Some operations, such as deleting a miscellaneous operation, are only possible on unconfirmed entries.'"
+  },
+  {
+   "topic": "Confirmed / Verified states and numbering",
+   "finding": "Entries pushed through the API are unconfirmed by default (Confirmed: false) by design, so the accountant can review them in Horus Office before confirming. While an entry is unconfirmed, Number can be 0.\nAutoGenerateNumber exists only on misc, bank and financial operations (new and update), and only works with Confirmed=true. The invoice endpoints have no AutoGenerateNumber, and no endpoint returns the next entry number (matching.next-number.* only gives a MatchNo). Number is required on sales invoices and operations but nullable on purchase invoices.\nVerified is an optional extra review step that only exists if configured. Documents follow their own Status lifecycle (e.g. '100: WaitingConfirmation', '200: Confirmed', '400: BeingProcessed', '500: ProcessingFailed').",
+   "label": "F",
+   "evidence": "Guide: Data model: 'Entries pushed through the API are unconfirmed by default ( Confirmed: false ), which lets the accountant review them in Horus Office before confirming them.' Guide: Posting sales & purchase invoices: 'It can be 0 when the invoice is not confirmed.' Guide: Bank, financial & miscellaneous operations: 'If you set Confirmed: true , you can let Horus generate the number with AutoGenerateNumber: true (leave Number at 0 ).' POST /book-entries.miscellaneous-operations.new → AutoGenerateNumber: 'The number will be automatically generated.' POST /invoices.sales.new → Number *: '(can be 0 if not confirmed)', with no AutoGenerateNumber field; POST /invoices.purchases.new → Number: 'Nullable.'; POST /book-entries.list → Verified: 'Can only ever be set to 'True' if an additionnal verification step has been configured in Horus.'; POST /documents.list → Status enum."
+  },
+  {
+   "topic": "Fiscal years, closure dates and periods",
+   "finding": "A fiscal year describes the folder's closing status: start and end dates, last VAT closure date, last closure dates per kind of daybook (purchases, sales, financials, misc operations) and IsClosed. Horus advises checking the closure dates with fiscal-years.list before pushing entries, so as not to post into a period the accountant has closed. IsClosed is returned only by fiscal-years.info, not by the list. Write endpoints carry only a Date, with no period or fiscal-year field, so the accounting period follows the entry date (D).",
+   "label": "F",
+   "evidence": "Guide: Data model: 'A fiscal year ... describes its closing status: start and end dates, last VAT closure date, last closure dates per type of daybook'; 'Before pushing entries, check the relevant closure dates with fiscal-years.list to avoid posting into a period that has already been closed by the accountant.' POST /fiscal-years.list → Data.LastVatClosureDate, LastSalesClosureDate, ... (no IsClosed); GET /fiscal-years.info → Data.IsClosed. POST /invoices.sales.new → Date * and no period field."
+  },
+  {
+   "topic": "Multipart uploads and downloads",
+   "finding": "14 write endpoints accept multipart/form-data: book-entries.documents.new and .annexes.new, the new/update endpoints of invoices and of misc, bank and financial operations, documents.new and library.documents.new. The request has a 'file' part (the bytes) and a 'body' part (the same JSON object as the application/json version). FileName, with its extension, must always be set in the JSON body. Supported file types: Pdf, Xml, CODA, SODA and images (.jpg, .jpeg, .png).\nUpload routes by goal:\n- documents.new: automatic processing into an entry.\n- invoices.*.new / book-entries.*.new in multipart: data and document in one call.\n- book-entries.documents.new: fails if a main document already exists.\n- book-entries.documents.annexes.new: fails if there is no main document yet.\n- library.documents.new: stored in the library, not linked to an entry.\nDownloads return raw bytes, to be read as a binary stream. No size limit is documented.",
+   "label": "F",
+   "evidence": "Guide: Documents & attachments: 'All uploads use the multipart/form-data content type with two fields'; 'body The JSON-formatted request, the same object as the application/json version of the endpoint.'; 'Always set FileName in the JSON body, including the extension.'; 'Supported file types Pdf, Xml, CODA, SODA, and images ( .jpg , .jpeg , .png ).'; annexes.new: 'Fails if there is no main document yet.'; 'documents.download and library.documents.download return the raw bytes of the file, not JSON.' 14 'REQUEST BODY (multipart/form-data)' blocks in horus_reference.txt. POST /book-entries.documents.new: '**The request will fail if a document is already attached to the book entry**'."
+  },
+  {
+   "topic": "Synchronous vs asynchronous creation",
+   "finding": "Structured posts (invoices; misc, bank and financial operations) are converted into book entries and return the new entry's id in the same response, so they behave synchronously. documents.new is asynchronous. It returns a document id, Horus then processes the file into a book entry in the background, and progress is followed with documents.info and documents.list (Status, BookEntry).",
+   "label": "F",
+   "evidence": "Guide: Posting sales & purchase invoices: 'Sales and purchase invoices pushed through the API are converted into book entries in the corresponding daybook. The response contains the generated book entry's Id .' Guide: Documents & attachments: 'documents.new inserts a document that is processed automatically and transformed into a book entry.'; 'The response contains the generated document Id. Use documents.info and documents.list to follow it.' GET /documents.info → Data.Status '400: BeingProcessed', Data.BookEntry."
+  },
+  {
+   "topic": "Write-time business validations",
+   "finding": "Horus checks these rules on write:\n- Invoices: TotalAmount = BaseAmount + TaxAmount, and the lines' BaseAmount and TaxAmount sums equal the header. Tax amounts are recalculated as base × rate and adapted within 1 cent unless OverrideTaxAmounts=true. Unbalanced entries are refused unless AllowUnbalanced=true.\n- VAT: only some combinations of TaxRate, TaxType and TaxOrigin (plus TaxKind and TaxCondition for purchases) are valid. The lists sit in external spreadsheets that were not provided.\n- Misc operations must balance, and Debit and Credit are non-negative.\n- Bank operations: on general lines, the tax amount must be included in the line amount.\n- Analytics: a line's cost lines must add up to its BaseAmount. CostLines take precedence over CostDistributionKey.\n- Companies: a VAT number already used by another company is refused unless AllowDuplicateVatNumber=true.",
+   "label": "F",
+   "evidence": "Guide: Posting sales & purchase invoices: 'TotalAmount = BaseAmount + TaxAmount'; 'Tax amounts are recalculated (base × rate) and adapted when the provided amount is within 1 cent.'; 'Unbalanced book entries are refused.'; 'Only some combinations are valid.'; 'If both are provided, cost lines take precedence.' Guide: Bank, financial & miscellaneous operations: 'The tax amount must be included in the line amount.'; 'the sum of debits and credits must be balanced'. Guide: Managing customers & suppliers: 'By default, a VAT number already used by another company is refused.' POST /book-entries.miscellaneous-operations.new → Lines.Debit: 'Non-negative amount'."
+  },
+  {
+   "topic": "Error model, status codes and handling",
+   "finding": "All 72 endpoints document 200, 400, 401, 403, 404 and 500. None documents 409, 422 or 429. Apart from authorization errors (a 401 has no body), every error returns {ErrorType, Details, Message}:\n- ErrorType is the machine-readable category to use in code.\n- Details is a human-readable explanation that usually points to the invalid field or the missing reference.\n- Message is a short, generic text.\nA 400 also covers references to resources that do not exist.\nHorus's handling advice:\n- 401: refresh once and retry, then ask the user to reconnect.\n- 400: do not retry as-is; log Details.\n- 500: retry later with exponential backoff; if it persists, write to developer@horus-software.be with the endpoint, timestamp and request body.\nNo ErrorType list is published beyond the example 'not_found', and no specific advice is given for 403 or 404.",
+   "label": "F",
+   "evidence": "Guide: Responses & errors: 'Except for authorization errors, errors return an object with three fields'; 'ErrorType Machine-readable error category. Use it in your code.'; '400 : do not retry as-is. Log Details , it usually points to the invalid field or the missing reference (unknown account, unbalanced entry, etc.).'; '500 : retry later with exponential backoff.' Raw export horus.md → components.schemas.Error: ErrorType (example 'not_found'), Details, Message; components.responses.Unauthorized has no content. Response codes checked on every operation in horus_reference_v2.txt (72 operations, GET /book-entries.info included)."
+  },
+  {
+   "topic": "Legislations (BE/LU)",
+   "finding": "A folder follows either Belgian or Luxembourg legislation. The sales TaxOrigin enum mixes values specific to each country (e.g. '11: Prestation hors Belgique / Diensten Buiten België' vs '20: Prestations hors Luxembourg'). OSS lines (TaxOrigin 13) also carry a TaxCountryCode. Mapping VAT therefore depends on the folder's legislation. The guides are written from a Belgian viewpoint and do not describe any LU-specific rule.",
+   "label": "D",
+   "evidence": "POST /folders.list → Legislation enum['BE', 'LU']; POST /invoices.sales.new → InvoiceLines.TaxOrigin '`11`: Prestation hors Belgique / Diensten Buiten België' ... '`20`: Prestations hors Luxembourg'; TaxCountryCode: 'Only used for OSS Vat lines (TaxOrigin = 13)'. Guide: Data model: 'If you are familiar with Belgian accounting, most of them will sound natural.'"
+  },
+  {
+   "topic": "Languages",
+   "finding": "Each level uses a different set of language codes:\n- license and user: FR, NL;\n- folder: FR, NL, DE, XX;\n- company: FR, NL, DE, EN, ES, PT, XX;\n- companies.new LanguageCode: a free string with no enum (the guide example uses 'FR').\nThe country list labels English as 'Xx'. AlternateHeading (via UseAlternateHeading) gives headings in a second language. Enum labels are mostly in French or Dutch. The authorization pages exist in French (/fr/) and Dutch (/nl/).",
+   "label": "F",
+   "evidence": "GET /licenses.me → Language enum['FR', 'NL']; POST /folders.list → Language enum['FR', 'NL', 'DE', 'XX']; POST /companies.list → Language enum['FR', 'NL', 'DE', 'EN', 'ES', 'PT', 'XX']; POST /countries.list → CountryNameXx: 'English'; POST /account-balance.list → UseAlternateHeading: 'Use alternate heading instead of main heading.' Guide: Authorization flow: 'Use https://my-horus.com/nl/api/oauth2/authorize to display the Horus pages in Dutch.'"
+  },
+  {
+   "topic": "Date/time formats",
+   "finding": "Dates are exchanged as ISO 8601 strings with a time-zone offset (e.g. 2019-09-04T00:00:00+00:00). Fiscal-year EndDate falls at 23:59:59. Several date fields are plain strings with no declared format: account-history DueDate, LastPaymentDate, InactiveSince, the Last*ClosureDate fields and CustomerDomiciliationStartDate. Accounting periods are integer month/year pairs. Which time zone business dates are meant in is not documented.",
+   "label": "F",
+   "evidence": "Guide: Making requests: 'Dates are exchanged as ISO 8601 strings with a time zone offset, e.g. 2019-09-04T00:00:00+00:00 .' POST /fiscal-years.list → EndDate example '2017-12-31T23:59:59+00:00', LastVatClosureDate 'string|null'; POST /account-histories.list → DueDate 'string|null', AccountingMonth and AccountingYear numbers."
+  },
+  {
+   "topic": "Currency",
+   "finding": "EUR is the implicit currency and is shown as a null CurrencyCode. Other currencies come from a fixed enum and need a folder configured for currencies. If no CurrencyRate is given, Horus uses the rate of the day. Folders expose no currency field.",
+   "label": "F",
+   "evidence": "Guide: Posting sales & purchase invoices: 'null means EUR. The folder must be configured to allow currencies. If no rate is given, the rate of the day is used.' POST /invoices.sales.new → CurrencyCode: '*NULL* by default (= EUR).'; POST /account-histories.list → CurrencyCode: '*NULL* means EURO (€) was used.' GET /folders.info has no currency field."
+  },
+  {
+   "topic": "Rate limits",
+   "finding": "Neither the reference nor any of the 15 guides documents a rate limit, quota, Retry-After header or 429 response. The only performance advice is gzip, sideloading to 'reduce round trips' and caching reference data per folder.",
+   "label": "?",
+   "evidence": "No 429 response on any of the 72 operations; no match for rate/quota/429/throttle in horus_guides.md. Guide: Reading accounting data: 'Reduce round trips Use sideloading with Include'; 'Reference data changes rarely. Load it once and cache it per folder'."
+  },
+  {
+   "topic": "Versioning and change policy",
+   "finding": "Horus aims to stay backwards-compatible. These changes can happen at any time without notice: new endpoints, new optional request parameters, new response properties, new webhook types, parameters made optional, property order changes, and fixes for endpoints returning 500. Breaking changes (renaming or removing endpoints, parameters or properties, changing a format, stricter validation, different status codes) are announced in advance in the Changelog and by email to all integrators. Integrations must ignore unknown properties and not rely on property order. No version appears in paths or headers, and the spec says '1.0.0'. Webhooks are mentioned, but no webhook documentation exists in the provided material (?).",
+   "label": "F",
+   "evidence": "Guide: Changes & versioning: 'The following changes can happen at any time, without notice.'; 'adding new webhook types;'; 'If breaking changes must occur, they are announced here, and all integrators are notified by email in advance.'; 'Ignore unknown properties when deserialising responses, and do not rely on property order.' Raw export horus.md → info.version '1.0.0'."
+  },
+  {
+   "topic": "Testing and environments",
+   "finding": "No sandbox is documented. Requests from the API Reference 'Try It' button, Postman or code run against the license's real database, so Horus says to use a test license or a test folder for write operations. A first token can be obtained without a working callback page by copying code and api_url from the browser's address bar within 2 minutes. A Postman collection exists but was not provided.",
+   "label": "F",
+   "evidence": "Guide: Testing the API: 'Requests run against the license's real database. Use a test license or a test folder for write operations ( .new , .update , .delete ).'; 'the address bar shows the full redirect URL, from which you can copy code and api_url . The code is valid for 2 minutes.'; 'The Horus Postman collection contains every endpoint'."
+  },
+  {
+   "topic": "Read coverage gaps",
+   "finding": "The API reference has no invoice read model: no endpoint lists invoices, and apart from the open-items view of sales invoices none reads an invoice as such. One book entry can be read by Id with GET /book-entries.info, which takes only a query Id (no FolderId, DaybookId or month window). The Reading accounting data guide points to it for 'the full detail of one entry', but in the reference it returns the same object as one book-entries.list element:\n- header: DocumentNo, Confirmed, Verified, EntryType, OperationType, Date, LastModifiedDate;\n- CompanyDetail: company reference, DueDate, PaymentDate, TotalAmount, TurnoverAmount, TaxAmount, discount;\n- {Type, Id} references to Folder, Daybook, the main Document and the AccountHistories lines.\nLines, line-level VAT and analytics are not embedded, annexes are not listed, and the endpoint is not one of the 4 sideloading endpoints. So line detail needs GET /account-histories.info per referenced line, or account-histories.list with Filter.BookEntryId inside a month window (D). Sets of entries are read through book-entries.list (FolderId, one DaybookId and a month window are required) or, as lines, through account-histories.list. Only sales invoices have an open-items view (invoices.sales.outstanding.list/info). Purchases have only suppliers.outstanding and account-histories.list with NotMatchedOnly, both at ledger-line level.",
+   "label": "F",
+   "evidence": "GET /book-entries.info: 'Get details for a specific book entry.' → param[query] Id * (its only parameter); Data.Document {Type 'Documents', Id}; Data.AccountHistories: array[object] {Type 'AccountHistories', Id}. Guide: Reading accounting data: 'Use book-entries.info to get the full detail of one entry.' Guide: Sideloading: 'Sideloading is currently supported on: book-entries.list account-histories.list companies.list invoices.sales.outstanding.list'. No invoices.*.list/info and no invoices.purchases.outstanding among the 72 headers. POST /book-entries.list → DaybookId *, StartMonth * etc.; POST /account-histories.list → Filter.BookEntryId: 'Filters on a book entry specified by its id.'; GET /account-histories.info → param[query] Id *; POST /suppliers.outstanding → Data.AccountHistories."
+  },
+  {
+   "topic": "Write coverage",
+   "finding": "These can be created: companies, IBANs, daybooks, accounts, cost sections (only inside List-type schemas), sales and purchase invoices, misc, bank and financial operations, documents, library documents, and matchings. These cannot: folders, fiscal years, cost schemas, vehicles, users.",
+   "label": "F",
+   "evidence": "POST /cost-sections.new: 'The parent cost schema must be of type *List* (CostSectionType = 100).' There is no folders.new, fiscal-years.new, cost-schemas.new, vehicles.new or users.new among the 72 endpoints. Guide: Data model daybook table: 100/150 → invoices.purchases.new, 200/250 → invoices.sales.new, 500 → book-entries.banks.new, 590 → book-entries.financials.new, 600 → book-entries.miscellaneous-operations.new."
+  },
+  {
+   "topic": "Analytics model",
+   "finding": "Analytics is a per-folder module (WithAnalytics) with up to 8 dimensions. A schema is either a List (its values are cost sections) or Free (masked values). Cost histories are the analytical distribution of entry lines. On write, analytics is given per line as cost-line amounts (not percentages) that must add up to the line's BaseAmount, or through a CostDistributionKey preconfigured in Horus Office. Cost lines win if both are given.",
+   "label": "F",
+   "evidence": "Guide: Data model: 'When the analytics module is enabled ( WithAnalytics ), entry lines can be distributed across analytical dimensions'; 'a cost distribution key is a predefined distribution, configured in Horus Office'. POST /cost-schemas.list → CostSectionType '`100`: List - expected values are cost sections - `900`: Free'; POST /invoices.sales.new → CostLines.Amount: 'The sum of all cost lines' amounts must be equal to the corresponding invoice line's base amount.'"
+  },
+  {
+   "topic": "Matching and outstanding items",
+   "finding": "Matching gives lines that offset each other (typically an invoice and its payments) the same MatchNo. Lines not yet matched make up the outstanding items.\n- POST /matching takes AccountHistoryIds that share one account type ('100: Customer', '200: Supplier', '300: General'), plus the same company for 100/200 or the same account for 300.\n- The MatchNo is auto-generated (AutoGenerateMatchNo) or given; matching.next-number.customer/supplier/account returns the next free one.\n- Invoices and operation lines accept a MatchNo at creation, so a payment can be posted already matched.\n- On read, MatchStatus is '0: Partially' or '900: Totally'.\n- Open items come from customers.outstanding, suppliers.outstanding, invoices.sales.outstanding.list/info, or account-histories.list with NotMatchedOnly=true for any account.\nThe codings differ: matching account types are 100/200/300, while posting line types are 1/2/3.",
+   "label": "F",
+   "evidence": "Guide: Outstanding items & matching: 'Lines that are not matched yet make up the outstanding items.'; 'all lines must have the same account type: 100 Customer, 200 Supplier or 300 General'; 'Invoices and operation lines accept a MatchNo when they are created.'; 'Unmatched lines of any account account-histories.list with NotMatchedOnly: true'. POST /account-histories.list → MatchDetail.MatchStatus '`0`: Partially - `900`: Totally'; POST /book-entries.miscellaneous-operations.new → Lines.Type '1 for customer, 2 for supplier, 3 for general'."
+  },
+  {
+   "topic": "Documentation inconsistencies",
+   "finding": "The docs contain copy-paste errors, schema gaps and guide/reference mismatches:\n- banks.update describes itself as a 'financial operation'.\n- book-entries.list ModifiedAfter refers to 'account-histories'.\n- outstanding.info: the FolderId is required, but the only matching parameter is an optional, unnamed 'Id'.\n- purchases.update has no CurrencyRate, while purchases.new and sales.update do.\n- daybooks.new marks no field as required.\n- ExcludedEntryTypes has no labels.\n- The guide says ModifiedAfter exists on 'many lists'; the reference has it on 3.\n- The guide documents the Include body parameter, but no request schema declares it, and the reference still points to a 'Sideloading section of the introduction'.\n- The guide says all identifiers are GUIDs, but examples contain non-hex characters.\n- The guide lists IsClosed among fiscal-year data and points to fiscal-years.list, which does not return it.\n- The guide asks for gzip via a request Content-Encoding header.",
+   "label": "F",
+   "evidence": "POST /book-entries.banks.update: 'Update a previously inserted financial operation.'; POST /book-entries.list → Filter.ModifiedAfter: 'Include only account-histories modified after a given date.'; GET /invoices.sales.outstanding.info: 'The folder id is always required' with param[query] Id (optional); POST /invoices.purchases.update has no CurrencyRate; POST /fiscal-years.list response has no IsClosed while GET /fiscal-years.info has it."
+  }
+ ],
+ "connector_conventions": [
+  {
+   "topic": "Consumer activation (OAuth) and base URL",
+   "rule": "Run the documented authorization code flow for each Chift consumer:\n1. Redirect to https://my-horus.com/fr/api/oauth2/authorize (or /nl/) with client_id, response_type=code, a registered redirect_uri and a fresh random state. The state must be at least 16 random bytes, stored in the session and checked on callback; reject the callback if it does not match.\n2. Treat error=access_denied as a failed activation.\n3. Exchange the code within 2 minutes at {api_url}/oauth2/access_token with grant_type=auth_code. Override the OAuth library default 'authorization_code'.\n4. Store api_url, access_token, refresh_token and the computed expiry together for that consumer, encrypted and never logged.\n5. Send every call to {api_url}/{method}. Never hard-code api_url or reuse it across consumers.",
+   "label": "F"
+  },
+  {
+   "topic": "Token lifecycle",
+   "rule": "Refresh proactively a few minutes before expiry (expires_in 3600) with grant_type=refresh_token. Refresh tokens are single-use, so:\n- hold a per-consumer lock (or queue) around each refresh, so two workers never refresh at once;\n- persist the new access/refresh pair before using it.\nOn a 401, refresh once and replay the request. If the refresh itself fails (token revoked or integration uninstalled), mark the consumer disconnected and return a ChiftError asking for re-authorization.",
+   "label": "F"
+  },
+  {
+   "topic": "consumer_id",
+   "rule": "CHIFT_INTERNAL. consumer_id selects the stored Horus connection record (api_url plus tokens). One Chift consumer = one connected Horus license = one database, possibly with many folders. A customer whose data sits in several licenses needs one consumer, and one authorization, per license.",
+   "label": "D"
+  },
+  {
+   "topic": "folder_id mapping",
+   "rule": "Chift folder_id = the Horus Folder.Id GUID returned by POST /folders.list (Mode 0). Inject it as FolderId wherever a body requires one; the guide calls it 'the FolderId used by nearly every other endpoint'. One folder_id rule applies to every route:\n1. folder_id is required whenever the connection has more than one selected folder.\n2. If exactly one folder was selected at activation, use it.\n3. If no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}.\n4. Otherwise return 400 'folder_id required'.\nA Horus 403 becomes Chift 400 'folder not accessible with this connection'. Fiduciary licenses hold many folders, so Chift's multiple-folders feature should be on.",
+   "label": "D"
+  },
+  {
+   "topic": "Cross-folder guard",
+   "rule": "Some calls address an object by its own Id, or by a parent other than the folder, and carry no FolderId: GET *.info, cost-schemas.info and cost-sections.info, companies/accounts/daybooks.update, ibans.list, book-entries.documents.new and annexes.new, the two DELETEs, and matching.next-number.*. One token sees every folder the user can access, so every Id-only call must verify the folder before data is returned or written:\n- companies.info → Data.Folder.Id, book-entries.info → Data.Folder.Id and daybooks.info → Data.Folder.Id must equal folder_id. The same check applies to the other .info reads that return Data.Folder (accounts, fiscal years, vehicles, documents, library documents, invoices.sales.outstanding.info, cost-schemas.info).\n- Objects without a Folder reference are checked through their parent: IBANs through their company, account-histories.info through its BookEntry.\n- On a mismatch, return Chift 400.\n- Analytics are resolved only from the folder-scoped cache (cost-schemas.list and cost-sections.list), never through cost-sections.info, which takes only an Id and returns no Folder (only CostSchema).\nThis guard is what keeps Chift's folders isolated.",
+   "label": "D"
+  },
+  {
+   "topic": "Identifier handling",
+   "rule": "Return Horus GUIDs unchanged as Chift string ids. Treat them as opaque strings: do not validate them as UUIDs (documented examples contain non-hex characters), and compare them case-insensitively.",
+   "label": "D"
+  },
+  {
+   "topic": "Search keys vs ids",
+   "rule": "Chift account_number maps directly to Account.SearchKey, which Horus says is 'usually the account number'. Posting endpoints need search keys for accounts and analytics (cost schema and section search keys), but GUIDs for FolderId, DaybookId and CompanyId. Expose SearchKey in Chift 'code' fields.\nAnalytics use one per-folder cache shared by every route: POST /cost-schemas.list, plus POST /cost-sections.list per List-type schema (CostSectionType 100) with Filter.IncludeInactive=true. Chift analytic_plan = cost schema GUID Id and analytic_account = cost section GUID Id. On write, convert them to CostLines Costs SchemaSearchKey / Value (the section SearchKey) through this cache only, with no per-call cost-schemas.info or cost-sections.info. The write routes (create_invoice, create_misc_operation) reject an inactive section (Inactive=true) with 422.",
+   "label": "D"
+  },
+  {
+   "topic": "Envelope unwrapping and read-back",
+   "rule": "For reads, unwrap Data (object or array) and keep Included for resolving references. For writes, read the top-level Id, except cost-sections.new (Data.Id) and matching (Data.MatchNo). Accept empty 200 bodies (ibans.delete, ibans.clear, library.documents.delete) and raw-byte bodies (downloads). Every create returns only an id, so read the object back before building Chift's full output model: *.info for master data; for book entries, GET /book-entries.info with the returned Id (header, totals, due date, company, main document), plus GET /account-histories.info per referenced line, or account-histories.list with Filter.BookEntryId, for lines, VAT and analytics. Deserialise tolerantly: ignore unknown properties and never depend on property order.",
+   "label": "D"
+  },
+  {
+   "topic": "Reference resolution and sideloading",
+   "rule": "Load reference data once per folder and cache it, as the Reading guide recommends: fiscal years, daybooks, accounts, companies, vehicles, cost schemas and sections (the analytics cache described in 'Search keys vs ids'). On the 4 sideloading endpoints, add a top-level Include with comma-separated dot paths (e.g. 'CompanyDetail.Company,Daybook,Folder' on book-entries.list) and resolve {Type, Id} references from Included[Type]. Where sideloading a relation is not confirmed (array relations such as AccountHistories or Ibans), fall back to the cache or to *.info, and test sideloading on a real license.",
+   "label": "F"
+  },
+  {
+   "topic": "Pagination emulation",
+   "rule": "CHIFT_INTERNAL. Fetch the full Horus result with gzip on, apply Chift filters locally, sort deterministically (for example by date, then id), and slice by page and size (Chift caps size at 100). Report total as the filtered count. Optionally cache the full set briefly so each page does not refetch it. Re-check this design once Horus states whether large lists are capped.",
+   "label": "D"
+  },
+  {
+   "topic": "Period windows and closure checks",
+   "rule": "Endpoints with mandatory windows need StartMonth/StartYear/EndMonth/EndYear, or CreatedAfter/CreatedBefore. Derive the window from Chift date_from/date_to, or else from fiscal years (fiscal-years.list with IncludeFuture=true). Split long windows by fiscal year, and post-filter to the exact day because Horus windows are monthly.\nBefore every write, check the target date against the fiscal year's closure dates (fiscal-years.list) and IsClosed (fiscal-years.info), as Horus advises, and return a clear Chift error instead of letting the post fail.\nChift's force_financial_period (mmYYYY) has no Horus field, because the period follows the entry Date. Reject it or ignore it, but never silently change the Date.",
+   "label": "D"
+  },
+  {
+   "topic": "Filter translation",
+   "rule": "Horus filters are AND-ed, so Chift's free-text search (an OR over several fields) cannot be passed through. Either make one call per field (Name, Email, ExternalReference, SearchKey, and VatNumber with IsVatLiable=true) and merge the results, or filter locally on the cached list. Map journal_ids to account-histories.list DaybookIds (one call), or to one book-entries.list call per daybook.",
+   "label": "D"
+  },
+  {
+   "topic": "Incremental sync and updated_after",
+   "rule": "Map Chift updated_after to Filter.ModifiedAfter where it exists (companies.list, account-histories.list, book-entries.list) and filter locally elsewhere. The history endpoints still need a month window. An update replaces a book entry with a new id, and nothing reports deletions. So key synced entries on (daybook, DocumentNo), as Horus recommends, treat an id that disappears as replaced or deleted, and schedule periodic full reconciliations.",
+   "label": "D"
+  },
+  {
+   "topic": "Explicit flags",
+   "rule": "Always set Horus opt-in flags explicitly: IncludeFuture, IncludeInactive, IncludeVatDetail, IncludeCostDetail, IncludeMatchDetail, IncludeCompanyDetail, ConfirmedOnly, NotMatchedOnly. Do not rely on the documented defaults.",
+   "label": "D"
+  },
+  {
+   "topic": "Partial updates",
+   "rule": "When a Chift PATCH or force_merge maps to companies.update or accounts.update, send only the fields present in the Chift request. Leave null or absent fields out, so they keep their value. Send an empty string only when Chift explicitly asks to clear a value, because Horus erases on empty string. Invoice and operation updates are full replacements: never send a partial payload to invoices.*.update or book-entries.*.update.",
+   "label": "F"
+  },
+  {
+   "topic": "Entry updates change ids",
+   "rule": "Any flow that updates a book entry (invoices.*.update, misc, bank or financial update) must return the new id, treat the old id as gone, and resend the attachment, because the original is deleted. The routes in scope should stay create-only.",
+   "label": "F"
+  },
+  {
+   "topic": "Idempotency and duplicates",
+   "rule": "Neither the reference nor the guides offers an idempotency key.\n- Clients and suppliers: write Chift external_reference to ExternalReference (Horus recommends storing your own identifier there), and look up by ExternalReference and by VatNumber before creating. Horus refuses a duplicate VAT number unless AllowDuplicateVatNumber=true, so turn that refusal into a clear duplicate error or point to force_merge.\n- Entries (create_invoice and create_misc_operation alike): whenever an invoice_number or operation_number is supplied, run POST /book-entries.list (FolderId, DaybookId, the fiscal-year period as StartMonth/StartYear/EndMonth/EndYear, Filter.DocumentNo) before creating, and return a duplicate error on a match. This assumes the written Number is read back as DocumentNo (A).\nOn a timeout or a 500 during a create, run this lookup before any retry. Never blind-retry, because Horus has no idempotency key.",
+   "label": "D"
+  },
+  {
+   "topic": "Partner resolution in create_invoice (partner_info)",
+   "rule": "partner_info.account_number has no description in the Chift spec. Treat it as the Horus company SearchKey (A). Open question to Chift: 'What does partner_info.account_number mean: a third-party code or a ledger account?'\n1. Apply create_client's SearchKey rules (sanitise; must be unique within the folder).\n2. Look the company up with POST /companies.list in the target FolderId. Filter.SearchKey is a contains filter, so keep only the exact match locally. Reuse a match only if it is in the same folder.\n3. If the match lacks the role flag needed for the invoice side (IsCustomer for customer_*, IsSupplier for supplier_*), set the flag with POST /companies.update under the force_merge logic: send only that flag, never '' values.\n4. Otherwise create the company with POST /companies.new using create_client's required-field rules, including the write-side language fallback.",
+   "label": "A"
+  },
+  {
+   "topic": "Numbering",
+   "rule": "Horus entry numbers are numeric, so Chift invoice_number and operation_number must be digit strings; reject or map anything else. For misc operations without a number, use AutoGenerateNumber=true, which only works with Confirmed=true; read the generated number back with GET /book-entries.info (DocumentNo). Invoices have no AutoGenerateNumber and no next-number endpoint exists, yet Chift promises automatic numbering when invoice_number is empty. The options are:\n- post unconfirmed with Number 0, which Horus allows;\n- compute max(DocumentNo)+1 per daybook, which can race (A).\nThe choice must be agreed with Horus.",
+   "label": "D"
+  },
+  {
+   "topic": "Posting status",
+   "rule": "One rule for both write routes (create_invoice, create_misc_operation):\n- Chift status 'draft' → Confirmed=false (Number may be 0).\n- Chift 'posted' (the Chift default) → Confirmed=true.\n- A per-consumer setting 'always push unconfirmed' forces Confirmed=false. Recommend it where the accountant must review API entries, which is why Horus creates API entries unconfirmed by default. When the setting overrides 'posted', say so in the response.\nBoth behaviours are possible in Horus: the invoice and misc-operation create endpoints take an optional Confirmed boolean, false by default. Which default fits fiduciary clients is a Chift/Horus product decision (open question).\nOn reads, posted = Confirmed. For outstandings, unposted_allowed=false maps to ConfirmedOnly=true where that filter exists (account-histories, book-entries, invoices.sales.outstanding.list). It does not exist on customers/suppliers.outstanding, so filter on each line's Confirmed locally there.",
+   "label": "D"
+  },
+  {
+   "topic": "Amounts and signs",
+   "rule": "Horus write lines use two non-negative columns, Debit and Credit (misc operations), or one Amount (bank and financial operations). Invoices use positive amounts plus a Type (0 invoice, 1 credit note). Convert Chift signed amounts to that shape; for example, a misc-op amount that is positive goes to Credit and a negative one to Debit. On read, normalise Debit/Credit and signed TotalAmount (for example LinkedElements TotalAmount -210) to each Chift route's convention. The sign of credit-note amounts on read is undocumented.\nOutstanding items use one side-based rule in every client and supplier path (primary, reconciliation lines, fallbacks):\n- customer lines (AccountType '100: CollectCust / Customer'): amount = Debit − Credit; match-group residual = Σ(Debit − Credit);\n- supplier lines (AccountType '200: CollectSup / Supplier'): amount = Credit − Debit; residual = Σ(Credit − Debit).\nPositive therefore means 'owed': receivable for clients, payable for suppliers. Rows taken from invoices.sales.outstanding.list are already in the receivable view (invoice +, payment −). Open question to Chift: the expected sign convention for OutstandingItem.amount/open_amount.",
+   "label": "D"
+  },
+  {
+   "topic": "Business pre-validation",
+   "rule": "Check Horus's documented rules before calling:\n- TotalAmount = BaseAmount + TaxAmount, and line totals equal the header;\n- misc operations balance;\n- cost lines add up to the line's BaseAmount (invoices) or Debit/Credit amount (misc operations);\n- every analytic section is in the folder cache, active (422 otherwise) and in a List-type schema (Free schemas are not accepted in v1);\n- no more than 8 analytic axes;\n- the date is not in a closed period;\n- the file type is supported;\n- no other company already has the VAT number.\nThis lets the connector return a clear Chift 4xx rather than an opaque Horus 400.",
+   "label": "D"
+  },
+  {
+   "topic": "Analytic percentages to amounts",
+   "rule": "Convert Chift analytic_distribution percentages to Horus CostLines amounts. Each cost line carries one Amount and one Costs entry (SchemaSearchKey, Value) per schema, so with several plans the connector builds the per-line product allocation: one cost line per combination of sections, with share = the product of the plan percentages and amount = line base × share.\nRounding uses the largest-remainder method: round every cost line down to the cent, then give the remaining cents one by one to the lines with the largest remainders, so the cost lines sum exactly to the line BaseAmount (invoices) or to the line's Debit/Credit amount (misc operations).\nDo not send CostDistributionKey alongside CostLines, because cost lines take precedence.\nFree schemas (CostSectionType 900) are excluded from Chift analytics in v1: they are not returned by Get analytic plans/accounts, not accepted on write, and omitted on read with a warning. Open question: whether Chift should expose them later.",
+   "label": "D"
+  },
+  {
+   "topic": "Files",
+   "rule": "Decode Chift base64 PDFs and send multipart/form-data with a 'file' part (the bytes) and a 'body' part (the same JSON as the JSON variant, as a string). Always include FileName with its extension (pdf_name, or a generated '<number>.pdf'). Only Pdf, Xml, CODA, SODA and jpg/jpeg/png are allowed, so reject anything else up front. To attach later, use book-entries.documents.new when the entry has no document, otherwise annexes.new; each fails in the other case. On reads, read documents.download as a binary stream and base64-encode it.",
+   "label": "D"
+  },
+  {
+   "topic": "Currency",
+   "rule": "Write: leave CurrencyCode out when the Chift currency is EUR, and read a null CurrencyCode as 'EUR'. Reject currencies outside Horus's enum, and any non-EUR currency when the folder is not set up for currencies. Send CurrencyRate only when Chift force_currency_exchange asks for the given rate; otherwise Horus applies the rate of the day. invoices.purchases.update has no CurrencyRate.\nRead (one assumption for every route, A): account-history Debit/Credit and book-entry CompanyDetail amounts are in the folder currency (EUR). Invoice-currency amounts are known only from (a) the write echo on create, or (b) TotalCurrencyAmount / OpenCurrencyAmount on invoices.sales.outstanding.list.\nRule: never pair EUR amounts with a foreign currency code. For a foreign-currency document whose invoice-currency amounts are not available, return the amounts in EUR with currency = 'EUR' and currency_exchange_rate = 1, and flag it as a limitation. accounting_info.main_currency_total = the EUR partner-line amount. This applies to get_invoices, outstandings (supplier lines and client fallback lines) and the response rebuilt by create_invoice.\nOpen question to Horus: direction and meaning of CurrencyRate; currency of CompanyDetail amounts.",
+   "label": "A"
+  },
+  {
+   "topic": "Code tables",
+   "rule": "Translate codes through explicit mapping tables:\n- Language, write: Chift ISO 639-1 language → upper-case Horus code when it is in the company enum (FR, NL, DE, EN, ES, PT). Any other language → the folder language from GET /folders.info (Language, which may be 'XX'). The same fallback applies everywhere a company is written (create_client, POST suppliers, partner creation in create_invoice).\n- Language, read: lowercase Horus Language for FR/NL/DE/EN/ES/PT; 'XX' → null.\n- ISO 3166-1 alpha-2 country → CountryCode, validated with countries.list.\n- Horus integer enums → Chift enums: daybook Type → journal_type through the single table in 'Daybook Type → journal_type', and PaymentMode → payment method.\nMap unknown or new enum values to Chift 'unknown' or a safe default.",
+   "label": "A"
+  },
+  {
+   "topic": "VAT-code grammar (synthetic tax_code)",
+   "rule": "Horus has no VAT-code entity, so the connector owns a VAT catalogue (see the dependency 'GET /accounting/vat-codes') with ONE id grammar, used identically by GET vat-codes, create_invoice (decode) and get_invoices (encode):\n- Sales: 'S-{TaxRate}-{TaxOrigin}-{TaxType}', plus '-{TaxCountryCode}' only for OSS lines (TaxOrigin = 13). Example: 'S-21-0-0'.\n- Purchases: 'P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}', with 'x' for a component that is not used. Example: 'P-21-2-0-0-1-true'.\nWrite: decode the id into the line fields and reject an id that is not in the catalogue.\nRead: rebuild the id from VatDetail (VatRate, SaleTaxOrigin/PurchaseTaxOrigin, TaxType, TaxCountryCode, TaxCondition, TaxConditionValue) and return it only if exactly one catalogue entry matches. VatDetail has no TaxKind, so when several purchase entries match (differing only by TaxKind), or none does, return tax_code = null and keep tax_rate and tax_amount. Never guess, and never return Horus VatCode as the Chift tax_code.\nThe catalogue contents depend on the accepted-combination files, which were not provided (?). Read-side TaxCondition has an extra value '4 = Article'.",
+   "label": "D"
+  },
+  {
+   "topic": "Daybook Type → journal_type (one table for all routes)",
+   "rule": "Every route (Get journals, create_invoice, create_misc_operation, get_invoices, outstandings) uses this table:\n- 100 Purchase → supplier_invoice (D; posted with invoices.purchases.new)\n- 150 PurchaseCreditNote → supplier_refund (D; invoices.purchases.new)\n- 200 Sale → customer_invoice (D; invoices.sales.new)\n- 250 SaleCreditNote → customer_refund (D; invoices.sales.new)\n- 500 Bank → financial_operation (D; book-entries.banks.new)\n- 590 Financial → financial_operation (D; book-entries.financials.new)\n- 550 Cash → financial_operation (A; no API posting endpoint documented)\n- 600 MiscOperation → miscellaneous_operation (D; book-entries.miscellaneous-operations.new)\n- 610 TemporaryMiscOperation, 690 SystemMiscOperation, 700 CostMiscOperation → miscellaneous_operation (A; no API posting endpoint documented)\n- 900 Budget, 990 External, 0 Undefined and unknown future values → unknown (A; no posting endpoint)\nGet journals returns blocked = true for every type without a documented API posting endpoint (550, 610, 690, 700, 900, 990, 0), labelled A. create_misc_operation auto-selects and validates only Type 600, which matches the blocked flag. Credit notes may sit in 200/100 daybooks, so journal_type describes the daybook, not every entry in it.",
+   "label": "D"
+  },
+  {
+   "topic": "Dates",
+   "rule": "Send date-times as ISO 8601 with an explicit offset ('YYYY-MM-DDT00:00:00+00:00'); this format is documented. Truncate them to get Chift dates. Parse untyped date strings defensively. Treat business dates as UTC midnight until Horus states the time-zone convention (A).",
+   "label": "A"
+  },
+  {
+   "topic": "Error translation",
+   "rule": "Map the Horus HTTP status and Error{ErrorType, Message, Details} to ChiftError: message = Message (or the HTTP reason), detail = Details (which Horus says usually names the invalid field or the missing reference), error_code = a namespaced ErrorType (for example 'horus_not_found'), status = 'error'.\n- 400 → validation or unknown-reference error.\n- 401 after a failed refresh → re-authorization required.\n- 403 → Chift 400 'folder not accessible with this connection' (the authorizing user or the integration lacks access).\n- 404 → not found.\n- 500 → upstream error.",
+   "label": "D"
+  },
+  {
+   "topic": "Retry policy",
+   "rule": "Follow Horus's advice:\n- 400: never retry as-is; surface Details.\n- 401: refresh once and retry.\n- 500: retry later with exponential backoff.\nReads can be retried freely. Writes are retried only after the duplicate lookup described in 'Idempotency and duplicates', because Horus has no idempotency key. For a persistent 500, collect the endpoint, timestamp and request body (with tokens redacted) for developer@horus-software.be.",
+   "label": "F"
+  },
+  {
+   "topic": "Failures in multi-call flows",
+   "rule": "In multi-step writes (create, attach, read back), never blindly retry the create once Horus has written the entry. Return the created id, with a detail naming the step that failed. Roll back only where Horus allows it: DELETE an unconfirmed misc operation that came through the API.",
+   "label": "D"
+  },
+  {
+   "topic": "Throughput",
+   "rule": "No rate limit is documented. Send the gzip header on every call (documented), limit concurrency per license, back off exponentially on 5xx and network errors, honour Retry-After if Horus ever sends it, prefer sideloading, and cache per-folder reference data to cut the call counts of composite routes.",
+   "label": "A"
+  },
+  {
+   "topic": "Role awareness",
+   "rule": "Call folders.list with Mode 0 so an accountant sees every accessible folder (Mode 1 shows only the folders they are responsible for). Present a 403 as an access problem of the authorizing user, who may be an accountant or a Horus Mobile entrepreneur, and return it to Chift as 400 'folder not accessible with this connection'.",
+   "label": "F"
+  },
+  {
+   "topic": "Terminology layer",
+   "rule": "Keep one glossary in code and docs:\n- Horus Folder = Chift folder\n- Horus Company = Chift client or supplier (partner_id): a third party, not the folder's own entity\n- Daybook = journal\n- Account SearchKey = ledger account number\n- Cost schema = analytic plan (List-type schemas only in v1)\n- Cost section = analytic account\n- Book entry = invoice or journal entry\n- Account history = entry line\n- MatchNo = matching number",
+   "label": "D"
+  },
+  {
+   "topic": "Change tolerance",
+   "rule": "Build a tolerant client, as the versioning policy asks: ignore unknown response properties, do not rely on property order, and accept new optional parameters and endpoints. Breaking changes are announced in the Changelog and by email, so register Chift's integration contact for Horus integrator emails and review the Changelog before each connector release.",
+   "label": "F"
+  },
+  {
+   "topic": "Testing",
+   "rule": "Horus documents no sandbox: API calls run against the license's real database. Run write tests (.new, .update, .delete) only on a test license or test folder obtained from Horus. Use the Postman collection or the reference's Try It button (with the apiUrl variable) to capture real payloads as test fixtures.",
+   "label": "F"
+  },
+  {
+   "topic": "Verdict calibration",
+   "rule": "One scale is stated once in the report and applied to every route:\n- Supported: one native Horus endpoint (plus cached reference data) serves the route with deterministic field transformations; no Chift behaviour must be emulated; losses are limited to minor optional fields.\n- Supported with workaround: feasible, but needs extra per-request calls (read-backs, joins, N+1), emulated filters/pagination/numbering, or loses a capability or field that clients typically rely on.\n- Not supported: no Horus capability.\n- To confirm: documentation insufficient.\nConsequence: create_misc_operation is 'workaround', because non-EUR operations and non-numeric numbers cannot be posted, line_number is dropped, and a read-back is needed when Horus generates the number. Get folders and Get analytic plans stay 'supported'.",
+   "label": "D"
+  }
+ ],
+ "missing_docs": [
+  {
+   "page": "Quickstart and Register your integration",
+   "would_answer": "How Chift obtains client_id and client_secret; how redirect URIs are registered (one per environment?); whether any scopes or integration-level permissions exist, since none appear in the documented authorization request; whether Horus can provide a test license.",
+   "impact": "Needed to set up Chift's OAuth app and activation screens. No longer blocks the design: the Authentication guides now document the authorization flow, the token exchange and the refresh rules."
+  },
+  {
+   "page": "Support & FAQ (or a direct question to developer@horus-software.be)",
+   "would_answer": "Rate limits or quotas; whether list endpoints silently cap or truncate large results; request timeouts and payload size limits, including upload file size; whether 'contains' filters are case-sensitive; which time zone business dates are meant in. None of the 15 guides covers these.",
+   "impact": "Emulated pagination and totals are only correct if Horus returns complete result sets, and silent truncation would corrupt Chift totals. Concurrency and backoff settings depend on the limits."
+  },
+  {
+   "page": "Changelog",
+   "would_answer": "Announced and past breaking changes, and whether the reference inconsistencies listed in the principles (e.g. the unnamed 'Id' parameter of outstanding.info, the missing CurrencyRate on purchases.update) have been fixed.",
+   "impact": "Maintenance planning only. The versioning policy itself is now documented (Guide: Changes & versioning)."
+  },
+  {
+   "page": "Tax-combinations-sales.xlsx / Tax-combinations-purchases.xlsx (linked from the invoice endpoints and from Guide: Posting sales & purchase invoices)",
+   "would_answer": "The accepted combinations of TaxRate, TaxType, TaxOrigin, TaxKind, TaxCondition and TaxConditionValue for each legislation (BE, LU), including OSS lines.",
+   "impact": "Required to build the synthetic catalogue behind Chift GET vat-codes (one grammar: 'S-{TaxRate}-{TaxOrigin}-{TaxType}[-{TaxCountryCode}]' and 'P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}') and to validate tax_code on create_invoice. Also ask Horus whether TaxKind can be exposed on read: VatDetail has none, so purchase codes that differ only by TaxKind cannot be told apart and are returned as tax_code = null. Read-side TaxCondition also has an extra value '4 = Article'. Still the biggest functional design gap."
+  },
+  {
+   "page": "Postman collection (linked from Guide: Testing the API)",
+   "would_answer": "Real example bodies and responses: the actual shape of CostHistories, the format of untyped date strings, what an Included block contains, and how gzip behaves with the documented header.",
+   "impact": "Gives test fixtures and lets the mapping be checked against real payloads before a test license is available."
+  },
+  {
+   "page": "Sideloading paths per endpoint (neither the Sideloading guide nor the request schemas list them)",
+   "would_answer": "Which relationship paths each of the 4 endpoints accepts in Include; whether array relations (AccountHistories on book entries, Ibans on companies) and multi-level paths work; which fields Included entities carry.",
+   "impact": "Decides whether get_invoices and the client/supplier lists (bank_accounts) need one extra call per record or a single call."
+  },
+  {
+   "page": "Webhook documentation (Guide: Changes & versioning mentions 'adding new webhook types'; no webhook page was provided)",
+   "would_answer": "Whether Horus can push change or deletion notifications, which events exist, and how deliveries are secured.",
+   "impact": "Without webhooks, sync relies on polling ModifiedAfter (3 endpoints only) plus periodic full reconciliation, and deletions cannot be detected."
+  },
+  {
+   "page": "ErrorType catalogue (no provided page lists it; Guide: Responses & errors shows only 'not_found')",
+   "would_answer": "The machine-readable ErrorType values (e.g. duplicate VAT number, unknown account, closed period, unbalanced entry) and whether Details is ever structured per field.",
+   "impact": "Decides how precise Chift's error_code and detail can be, and which Horus errors the connector can turn into actionable 4xx messages."
+  },
+  {
+   "page": "Posting rules not covered by the provided guides (ask Horus; possibly Support & FAQ)",
+   "would_answer": "Whether Number must be unique per daybook or fiscal year, and whether Horus rejects duplicates; whether a credit note (Type 1) must go into a 150/250 credit-note daybook or may go into a 100/200 daybook; the sign of credit notes on read; which Confirmed default fits fiduciary clients (both Confirmed=false and Confirmed=true can be sent, so this is a Chift/Horus product decision); whether daybooks of types 550, 610, 690 and 700 can receive API entries (no posting endpoint is documented for them); SearchKey rules for companies (length, characters) beyond 'unique within the folder'; the default concentration accounts when none is given; how open amounts and partial payments are computed for purchases, which have no open-items view.",
+   "impact": "Affects create_invoice, create_misc_operation, create_client and POST suppliers, the idempotency design, the posted/draft default, the blocked flag in Get journals, and the accuracy of supplier outstandings."
+  },
+  {
+   "page": "Currency semantics on read (no provided page states them; ask Horus)",
+   "would_answer": "In which currency account-history Debit/Credit and book-entry CompanyDetail amounts are expressed (folder currency or document currency); the direction and meaning of CurrencyRate; whether invoice-currency amounts can be read anywhere other than invoices.sales.outstanding.list (TotalCurrencyAmount, OpenCurrencyAmount).",
+   "impact": "The connector assumes folder-currency (EUR) amounts on every read (A). Until Horus confirms, a foreign-currency document whose invoice-currency amounts are not available is returned in EUR with currency_exchange_rate = 1 by get_invoices and outstandings, so the invoice currency is lost for purchases and for sales invoices that are no longer open."
+  }
+ ],
+ "inventory": [
+  {
+   "method": "GET",
+   "path": "/licenses.me",
+   "purpose": "Returns the license linked to the authenticated user (name, key, language, IsMain).",
+   "writes": false,
+   "chift_relevance": "None in case scope. Used during activation and health checks to identify the connected license."
+  },
+  {
+   "method": "GET",
+   "path": "/licenses.main",
+   "purpose": "Returns the main (fiduciary/SMB) license.",
+   "writes": false,
+   "chift_relevance": "None in case scope. Used during activation to tell a fiduciary license from a sub-license."
+  },
+  {
+   "method": "GET",
+   "path": "/users.me",
+   "purpose": "Returns the authenticated user, including IsAccountant (Horus Office accountant vs Horus Mobile entrepreneur).",
+   "writes": false,
+   "chift_relevance": "None in case scope. Cheap post-activation check (the guide's first call example). Indirectly supports get_folders, because the role changes what folders.list Mode returns."
+  },
+  {
+   "method": "GET",
+   "path": "/users.list",
+   "purpose": "Lists the users of the same license.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "GET",
+   "path": "/users.info",
+   "purpose": "Returns one user by Id.",
+   "writes": false,
+   "chift_relevance": "None in case scope. Could resolve ResponsibleUser and VerifiedBy references."
+  },
+  {
+   "method": "POST",
+   "path": "/folders.list",
+   "purpose": "Lists accessible folders (Mode 0 all, 1 mine) with contains filters; VatNumber uses equals.",
+   "writes": false,
+   "chift_relevance": "get_folders (main source). Also validates folder_id for every route, and gives the single-folder fallback when no folder selection is stored (one folder_id rule)."
+  },
+  {
+   "method": "GET",
+   "path": "/folders.info",
+   "purpose": "Returns one folder by Id; adds CountryCode, which the list lacks.",
+   "writes": false,
+   "chift_relevance": "get_folders (the address country needs one call per folder). Its Language is the write-side language fallback for companies (create_client, POST suppliers, partner creation in create_invoice)."
+  },
+  {
+   "method": "POST",
+   "path": "/companies.list",
+   "purpose": "Lists the companies (customers, suppliers, beneficiaries) of a folder, with filters including VatNumber, ExternalReference and ModifiedAfter; supports sideloading (Include).",
+   "writes": false,
+   "chift_relevance": "create_client (duplicate check on ExternalReference and VAT); get_invoices and get_outstandings (partner data); create_invoice (partner_info: exact SearchKey match, filtered locally because Filter.SearchKey is a contains filter). Dependency: GET clients/suppliers with search and updated_after."
+  },
+  {
+   "method": "GET",
+   "path": "/companies.info",
+   "purpose": "Returns one company by Id.",
+   "writes": false,
+   "chift_relevance": "create_client (read-back to build ClientItemOut), get_invoices (partner info), get_outstandings, create_invoice (partner_id check). Data.Folder.Id feeds the cross-folder guard (400 on mismatch)."
+  },
+  {
+   "method": "POST",
+   "path": "/companies.new",
+   "purpose": "Creates a company (IsCustomer/IsSupplier flags, address, IBANs, payment delay, concentration accounts, ExternalReference). Refuses a duplicate VAT number unless AllowDuplicateVatNumber; returns Id.",
+   "writes": true,
+   "chift_relevance": "create_client (core); create_invoice (creates the partner when no company has the partner_info SearchKey). Dependency: POST suppliers."
+  },
+  {
+   "method": "POST",
+   "path": "/companies.update",
+   "purpose": "Partial update of a company (null keeps a value, an empty string erases it).",
+   "writes": true,
+   "chift_relevance": "create_client: force_merge, i.e. setting IsCustomer=true on an existing supplier; create_invoice: sets the missing IsCustomer/IsSupplier flag on a reused partner (never '' values). Dependency: POST suppliers force_merge."
+  },
+  {
+   "method": "POST",
+   "path": "/countries.list",
+   "purpose": "Lists countries (code plus FR/NL/DE/EN names; codes and names filtered with equals).",
+   "writes": false,
+   "chift_relevance": "create_client (optional check of the address country code)."
+  },
+  {
+   "method": "GET",
+   "path": "/countries.info",
+   "purpose": "Returns one country by Id.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/ibans.list",
+   "purpose": "Lists the IBANs of a company (takes CompanyId only, no FolderId).",
+   "writes": false,
+   "chift_relevance": "create_client (read-back of bank_accounts). Dependency: GET clients/suppliers bank_accounts."
+  },
+  {
+   "method": "GET",
+   "path": "/ibans.info",
+   "purpose": "Returns one IBAN (Iban, Bic) by Id.",
+   "writes": false,
+   "chift_relevance": "create_client (resolves the MainIban and Ibans references into bank_accounts)."
+  },
+  {
+   "method": "POST",
+   "path": "/ibans.new",
+   "purpose": "Adds an IBAN to an existing company.",
+   "writes": true,
+   "chift_relevance": "create_client (alternative to Ibans[] in companies.new)."
+  },
+  {
+   "method": "POST",
+   "path": "/ibans.delete",
+   "purpose": "Removes one IBAN from a company (200 with no body).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/ibans.clear",
+   "purpose": "Removes all IBANs from a company (200 with no body).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/vehicles.list",
+   "purpose": "Lists the vehicles of a folder.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "GET",
+   "path": "/vehicles.info",
+   "purpose": "Returns one vehicle by Id.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/fiscal-years.list",
+   "purpose": "Lists the fiscal years of a folder (heading, start/end, VAT and per-daybook closure dates; no IsClosed).",
+   "writes": false,
+   "chift_relevance": "get_journals (next_document_numbers per bookyear); create_invoice and create_misc_operation (closure-date check before posting, as Horus advises); get_invoices and get_outstandings (period windows). Dependency: GET bookyears."
+  },
+  {
+   "method": "GET",
+   "path": "/fiscal-years.info",
+   "purpose": "Returns one fiscal year by Id, including IsClosed.",
+   "writes": false,
+   "chift_relevance": "Dependency: GET bookyears (the closed flag needs one call per year); closed-year check before posting."
+  },
+  {
+   "method": "POST",
+   "path": "/daybooks.list",
+   "purpose": "Lists the journals of a folder: Type enum (which decides the posting endpoint and, through the shared table, the Chift journal_type), IBAN, currency, concentration account.",
+   "writes": false,
+   "chift_relevance": "get_journals (core); create_invoice and create_misc_operation (journal_id checks); get_invoices (loop over Sale/Purchase daybooks); get_outstandings (journal_type)."
+  },
+  {
+   "method": "GET",
+   "path": "/daybooks.info",
+   "purpose": "Returns one daybook by Id.",
+   "writes": false,
+   "chift_relevance": "get_journals, create_invoice, create_misc_operation, get_outstandings (journal type). Data.Folder.Id feeds the cross-folder guard on journal_id (400 on mismatch)."
+  },
+  {
+   "method": "POST",
+   "path": "/daybooks.new",
+   "purpose": "Creates a daybook (purchase, sale, credit note, bank, financial or misc).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/daybooks.update",
+   "purpose": "Updates a daybook's SearchKey or Heading (partial update rule).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/accounts.list",
+   "purpose": "Lists the GL accounts of a folder (SearchKeys starts-with filter, categories, VAT defaults).",
+   "writes": false,
+   "chift_relevance": "get_chart_of_accounts (core); create_ledger_account (uniqueness check); create_invoice and create_misc_operation (account_number checks)."
+  },
+  {
+   "method": "GET",
+   "path": "/accounts.info",
+   "purpose": "Returns one account by Id.",
+   "writes": false,
+   "chift_relevance": "create_ledger_account (read-back), get_chart_of_accounts."
+  },
+  {
+   "method": "POST",
+   "path": "/accounts.new",
+   "purpose": "Creates a GL account (SearchKey, Heading, AlternateHeading, personal share); returns Id.",
+   "writes": true,
+   "chift_relevance": "create_ledger_account (core)."
+  },
+  {
+   "method": "POST",
+   "path": "/accounts.update",
+   "purpose": "Updates an account's Heading, AlternateHeading or personal share (partial update rule).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/cost-schemas.list",
+   "purpose": "Lists the analytic dimensions (cost schemas) of a folder.",
+   "writes": false,
+   "chift_relevance": "get_analytic_plans (core); get_analytic_accounts (loop over plans); create_invoice and create_misc_operation (plan id → schema search key from the per-folder cache). Free schemas (CostSectionType 900) are excluded from Chift analytics in v1."
+  },
+  {
+   "method": "POST",
+   "path": "/cost-schemas.info",
+   "purpose": "Returns one cost schema by Id (the Id goes in the body).",
+   "writes": false,
+   "chift_relevance": "Not needed in case scope: Get analytic plans/accounts read the lists, and the write routes resolve schema search keys only from the folder-scoped cache (no per-call .info). If ever called, check Data.Folder.Id."
+  },
+  {
+   "method": "POST",
+   "path": "/cost-sections.list",
+   "purpose": "Lists the cost sections of one schema in a folder.",
+   "writes": false,
+   "chift_relevance": "get_analytic_accounts (core, one call per List-type schema). Feeds the per-folder cache (Filter.IncludeInactive=true) from which create_invoice and create_misc_operation resolve analytic_account ids to section search keys and reject inactive sections (422)."
+  },
+  {
+   "method": "POST",
+   "path": "/cost-sections.info",
+   "purpose": "Returns one cost section by Id (the Id goes in the body).",
+   "writes": false,
+   "chift_relevance": "Not needed in case scope: it takes only an Id and returns no Folder (only CostSchema), so it cannot pass the cross-folder guard. Sections are resolved from the folder-scoped cache."
+  },
+  {
+   "method": "POST",
+   "path": "/cost-sections.new",
+   "purpose": "Creates a cost section in a List-type schema; returns Data.Id.",
+   "writes": true,
+   "chift_relevance": "None in case scope (would serve Chift's create analytic account route)."
+  },
+  {
+   "method": "POST",
+   "path": "/cost-histories.list",
+   "purpose": "Analytic ledger lines for a period (debit/credit per cost section, up to 8 dimensions).",
+   "writes": false,
+   "chift_relevance": "get_analytic_accounts (sums into balance/debit/credit); get_invoices (another source for the analytic distribution)."
+  },
+  {
+   "method": "POST",
+   "path": "/account-balance.list",
+   "purpose": "Trial balance per account for a period (report, period and total balances).",
+   "writes": false,
+   "chift_relevance": "None in case scope (would serve Chift's accounts-balance route)."
+  },
+  {
+   "method": "POST",
+   "path": "/account-histories.list",
+   "purpose": "General-ledger lines of a folder for a period across all daybooks. Filters: account prefix, daybooks, company, book entry, NotMatchedOnly, ConfirmedOnly, ModifiedAfter. Optional VAT/cost/match/company detail; supports sideloading.",
+   "writes": false,
+   "chift_relevance": "get_invoices (lines, VAT, analytics, payments via matching); get_outstandings (unmatched lines, due dates, matching); read-back for create_invoice and create_misc_operation. VatDetail rebuilds the synthetic tax_code (returned only when exactly one catalogue entry matches; no TaxKind on read). Debit/Credit are assumed to be in the folder currency (A)."
+  },
+  {
+   "method": "GET",
+   "path": "/account-histories.info",
+   "purpose": "Returns one ledger line by Id, with VAT, cost and match detail.",
+   "writes": false,
+   "chift_relevance": "get_invoices, get_outstandings (line-level detail)."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.list",
+   "purpose": "Entry headers for one daybook and month window: DocumentNo, Confirmed, EntryType, LastModifiedDate, company detail with totals and due date, main Document, line references. Filters: DocumentNo, ConfirmedOnly, ModifiedAfter. Supports sideloading.",
+   "writes": false,
+   "chift_relevance": "get_invoices (headers per Sale/Purchase daybook); create_invoice and create_misc_operation (duplicate pre-check by Filter.DocumentNo over the fiscal-year period whenever a number is supplied, and before any retry; read-back by Id uses book-entries.info); get_outstandings."
+  },
+  {
+   "method": "GET",
+   "path": "/book-entries.info",
+   "purpose": "Returns one book entry by Id (query Id only; no FolderId, DaybookId or month window). Same object as one book-entries.list element: DocumentNo, Confirmed, Verified, EntryType, OperationType, Date, LastModifiedDate, CompanyDetail (company reference, DueDate, PaymentDate, TotalAmount, TurnoverAmount, TaxAmount, discount) and {Type, Id} references to Folder, Daybook, the main Document and the AccountHistories lines. Lines are references only, and it is not a sideloading endpoint.",
+   "writes": false,
+   "chift_relevance": "create_invoice and create_misc_operation (single-call read-back of the returned Id; lines then via account-histories.info or account-histories.list); get_outstandings (optional: resolve an open line's BookEntry reference to its entry header). Dependency: GET attachments (type=invoice|entry: the entry's main Document reference in one call, then documents.download). Folder.Id feeds the cross-folder guard (400 on mismatch). get_invoices does not need it, because book-entries.list returns the same object in bulk. Outside the case scope it would serve Chift's single-invoice route."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.documents.new",
+   "purpose": "Attaches the main document (multipart) to a book entry that has none; takes BookEntryId only.",
+   "writes": true,
+   "chift_relevance": "create_invoice (alternative way to attach the PDF after creation)."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.documents.annexes.new",
+   "purpose": "Attaches an annex to a book entry that already has a main document (fails otherwise); returns the annexed document's id.",
+   "writes": true,
+   "chift_relevance": "None in case scope (would serve Chift's add-attachment route)."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.miscellaneous-operations.new",
+   "purpose": "Creates a misc operation (OD) with balanced Debit/Credit lines (customer, supplier or general), analytics, MatchNo and an optional file. Unconfirmed by default; AutoGenerateNumber only when confirmed.",
+   "writes": true,
+   "chift_relevance": "create_misc_operation (core). Confirmed follows the shared posted/draft rule ('posted' → true unless the consumer's 'always push unconfirmed' setting is on)."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.miscellaneous-operations.update",
+   "purpose": "Full replacement of a misc operation; returns a NEW book entry id and deletes the original attachment.",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.miscellaneous-operations.lines.update",
+   "purpose": "Partial update of comment, account, company or MatchNo on misc-op lines (amounts cannot change); returns the book entry's id.",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "DELETE",
+   "path": "/book-entries.miscellaneous-operations.delete",
+   "purpose": "Deletes an unconfirmed misc operation that was created through the API.",
+   "writes": true,
+   "chift_relevance": "None in case scope. Could roll back a failed create_misc_operation flow."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.banks.new",
+   "purpose": "Creates a bank operation in a Bank daybook (500): Amount lines of type customer, supplier or general, an optional Tax object on general lines, an optional CODA file.",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.banks.update",
+   "purpose": "Full replacement of a bank operation; returns a NEW id and deletes the attachment.",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.financials.new",
+   "purpose": "Creates a financial operation (e.g. a credit-card statement) in a Financial daybook (590).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/book-entries.financials.update",
+   "purpose": "Full replacement of a financial operation; returns a NEW id and deletes the attachment.",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/customers.outstanding",
+   "purpose": "Open customer ledger lines (receivables) for a folder, optionally per company, with SumDebit/SumCredit.",
+   "writes": false,
+   "chift_relevance": "get_outstandings (type=client; amount = Debit − Credit, positive = receivable)."
+  },
+  {
+   "method": "POST",
+   "path": "/suppliers.outstanding",
+   "purpose": "Open supplier ledger lines (payables) for a folder, optionally per company.",
+   "writes": false,
+   "chift_relevance": "get_outstandings (type=supplier; amount = Credit − Debit, positive = payable); get_invoices (payment status of supplier invoices)."
+  },
+  {
+   "method": "POST",
+   "path": "/documents.list",
+   "purpose": "Lists the documents of a folder created between two mandatory dates (type, status, linked BookEntry); has no BookEntryId filter.",
+   "writes": false,
+   "chift_relevance": "get_invoices (attachments_info). Dependency: GET attachments (may help find annexes by BookEntry; to be confirmed)."
+  },
+  {
+   "method": "GET",
+   "path": "/documents.info",
+   "purpose": "Returns one document's metadata (type, status, BookEntry).",
+   "writes": false,
+   "chift_relevance": "get_invoices (attachments_info). Dependency: GET attachments."
+  },
+  {
+   "method": "GET",
+   "path": "/documents.download",
+   "purpose": "Downloads a document's raw bytes (not JSON).",
+   "writes": false,
+   "chift_relevance": "Dependency: GET attachments (bytes → base64)."
+  },
+  {
+   "method": "POST",
+   "path": "/documents.new",
+   "purpose": "Uploads a file (Pdf, Xml, CODA, SODA, jpg/jpeg/png) that Horus processes into a book entry in the background; returns a document id.",
+   "writes": true,
+   "chift_relevance": "None in case scope (unstructured intake, not a structured invoice create)."
+  },
+  {
+   "method": "POST",
+   "path": "/library.documents.list",
+   "purpose": "Lists the library documents of a folder.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "GET",
+   "path": "/library.documents.info",
+   "purpose": "Returns one library document's metadata.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "GET",
+   "path": "/library.documents.download",
+   "purpose": "Downloads a library document's raw bytes.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/library.documents.new",
+   "purpose": "Uploads a document to the folder library (categories such as Vat, Admin, Social, AccountReport, Bank, PermanentFolder), not linked to any entry.",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "DELETE",
+   "path": "/library.documents.delete",
+   "purpose": "Deletes a library document (200 with no body).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/invoices.sales.new",
+   "purpose": "Creates a sales invoice or credit note (Type 0/1) as a book entry. Lines carry an account search key and TaxRate/TaxType/TaxOrigin; analytics, MatchNo and an optional PDF are possible. Unconfirmed by default.",
+   "writes": true,
+   "chift_relevance": "create_invoice (customer_invoice / customer_refund). Confirmed follows the shared posted/draft rule ('posted' → true unless the consumer's 'always push unconfirmed' setting is on)."
+  },
+  {
+   "method": "POST",
+   "path": "/invoices.sales.update",
+   "purpose": "Full replacement of a sales invoice (BookEntryId plus the complete payload); returns a NEW book entry id and deletes the attachment.",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/invoices.sales.outstanding.list",
+   "purpose": "Open sales invoices and credit notes with OpenAmount, PaymentStatus, DueDate and linked payments; supports sideloading.",
+   "writes": false,
+   "chift_relevance": "get_invoices (payment_status and payments for sales); get_outstandings (type=client: open amount, due date). TotalCurrencyAmount / OpenCurrencyAmount are the only read source of invoice-currency amounts; rows are already in the receivable view (invoice +, payment −)."
+  },
+  {
+   "method": "GET",
+   "path": "/invoices.sales.outstanding.info",
+   "purpose": "One open sales invoice, found by FolderId plus BookEntryId or BookEntryNumber ({DaybookSearchKey}-{Number}), with its linked elements.",
+   "writes": false,
+   "chift_relevance": "get_invoices (payments of one invoice), get_outstandings."
+  },
+  {
+   "method": "POST",
+   "path": "/invoices.purchases.new",
+   "purpose": "Creates a purchase invoice or credit note. Lines carry TaxKind/TaxCondition/TaxOrigin, personal share and vehicle; analytics and an optional PDF are possible. Unconfirmed by default.",
+   "writes": true,
+   "chift_relevance": "create_invoice (supplier_invoice / supplier_refund). Confirmed follows the shared posted/draft rule ('posted' → true unless the consumer's 'always push unconfirmed' setting is on)."
+  },
+  {
+   "method": "POST",
+   "path": "/invoices.purchases.update",
+   "purpose": "Full replacement of a purchase invoice; returns a NEW id and deletes the attachment (no CurrencyRate field).",
+   "writes": true,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "GET",
+   "path": "/matching.next-number.customer",
+   "purpose": "Returns the next free MatchNo for a customer.",
+   "writes": false,
+   "chift_relevance": "None in case scope (Chift invoice-payment and matching routes)."
+  },
+  {
+   "method": "GET",
+   "path": "/matching.next-number.supplier",
+   "purpose": "Returns the next free MatchNo for a supplier.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "GET",
+   "path": "/matching.next-number.account",
+   "purpose": "Returns the next free MatchNo for a general account.",
+   "writes": false,
+   "chift_relevance": "None in case scope."
+  },
+  {
+   "method": "POST",
+   "path": "/matching",
+   "purpose": "Matches account history lines (same account type, and the same company or account) under one MatchNo, given or auto-generated; returns Data.MatchNo.",
+   "writes": true,
+   "chift_relevance": "None in case scope (would serve Chift's invoice-payment and matching routes)."
+  }
+ ],
+ "dependency_coverage": [
+  {
+   "chift_dependency": "GET /accounting/vat-codes (needed for invoice lines tax_code)",
+   "horus_support": "Workaround. Horus has no VAT-code entity or endpoint. Each invoice line states its VAT treatment through a combination of fields:\n- sales and purchases: TaxRate, TaxType ('0: National', '1: European', '2: International') and TaxOrigin;\n- purchases only: TaxKind, TaxCondition and TaxConditionValue;\n- sales OSS lines only (TaxOrigin 13): TaxCountryCode.\nOnly some combinations are valid, and the lists are in spreadsheets that were not provided (ask Horus for them). The connector owns a VAT catalogue built from those files, with ONE id grammar used identically by GET vat-codes, create_invoice (decode) and get_invoices (encode):\n- Sales: 'S-{TaxRate}-{TaxOrigin}-{TaxType}', plus '-{TaxCountryCode}' only for OSS lines (TaxOrigin = 13). Example: 'S-21-0-0'.\n- Purchases: 'P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}', with 'x' for a component that is not used. Example: 'P-21-2-0-0-1-true'.\nOther Chift fields: type = sale or purchase (from the prefix); scope from TaxType (0→nat, 1→eu, 2→int); rate = TaxRate; country = TaxCountryCode for OSS entries; reversed could be derived from co-contractor or intra-EU origins (A). deductible_account and payable_account have no Horus source (NA). The catalogue depends on the folder's legislation (BE or LU).\nRead rule: build the id from account-histories VatDetail (VatRate, SaleTaxOrigin or PurchaseTaxOrigin, TaxType, TaxCountryCode, TaxCondition, TaxConditionValue) and return it only if exactly one catalogue entry matches. VatDetail has no TaxKind, so when several purchase entries match (differing only by TaxKind), or none does, return tax_code = null and keep tax_rate and tax_amount. Never guess, and never return Horus VatDetail.VatCode as the Chift tax_code: VatCode and VatHeading show that Horus has internal codes, but they cannot be listed. Read-side TaxCondition has an extra value '4 = Article'.\nOpen questions to Horus: provide the accepted-combination files; can TaxKind be exposed on read (VatDetail)?",
+   "label": "D",
+   "evidence": "Guide: Posting sales & purchase invoices: 'Each line carries its VAT treatment through a combination of fields'; 'TaxCountryCode (OSS lines only, TaxOrigin = 13)'; 'Only some combinations are valid. The accepted combinations are listed in these reference files'. POST /invoices.sales.new → InvoiceLines.TaxRate *, TaxOrigin * (enum '`0`: Vente nationale / Verkopen' ... '`20`: Prestations hors Luxembourg'), TaxType *, TaxCountryCode: 'Only used for OSS Vat lines (TaxOrigin = 13)'. POST /invoices.purchases.new → InvoiceLines.TaxKind enum '`0`: MERCH (Merchandises) - `1`: GS (Goods and services) - `2`: INVEST (Investments)', TaxCondition enum[0, 1, 2, 3], TaxConditionValue example 'true'. POST /account-histories.list → VatDetail: VatRate, VatCode, VatHeading, TaxType '0 = National, 1 = European, 2 = International', TaxCountryCode, TaxCondition '*NULL* = ignore, 0 = Country, 1 = Deductibility, 2 = Investments, 3 = Percentage, 4 = Article', TaxConditionValue, SaleTaxOrigin, PurchaseTaxOrigin (no TaxKind). No VAT endpoint among the 72."
+  },
+  {
+   "chift_dependency": "POST /accounting/suppliers (partner_id for purchase invoices)",
+   "horus_support": "Workaround (same endpoints and verdict as create_client under the verdict calibration: only an Id is returned, so a read-back is needed). Call POST /companies.new with IsSupplier=true and IsCustomer=false, then read the result back with GET /companies.info (cross-folder guard: Data.Folder.Id = folder_id).\n- Required by Horus: SearchKey, Name, IsCustomer, IsSupplier, IsVatLiable, LanguageCode and CountryCode. SearchKey must be unique within the folder, and the connector must generate it because its format rules are undocumented (A).\n- LanguageCode: the Chift language in upper case when it is in the Horus company enum (FR, NL, DE, EN, ES, PT); otherwise the folder language from GET /folders.info, which may be 'XX'.\n- external_reference → ExternalReference, which Horus recommends for storing the caller's own identifier.\n- Duplicates: Horus refuses a VAT number already used by another company unless AllowDuplicateVatNumber=true. So search companies.list (VatNumber with IsVatLiable=true, and ExternalReference) first, and return a clear duplicate error or suggest force_merge.\n- force_merge maps naturally, because one Horus company carries both role flags: call POST /companies.update {CompanyId, IsSupplier: true} under the partial update rule, sending only that flag and never '' values.",
+   "label": "F",
+   "evidence": "Guide: Managing customers & suppliers: 'companies.new requires FolderId , SearchKey , Name , IsCustomer , IsSupplier , IsVatLiable , LanguageCode and CountryCode'; 'Store your system's identifier in the company's ExternalReference field'; 'By default, a VAT number already used by another company is refused. Set AllowDuplicateVatNumber: true to allow it deliberately.' Guide: Data model: SearchKey 'unique within the folder'. POST /companies.new → RESPONSE 200 'Id'. POST /companies.update: 'Provide only the fields you want to update, or leave their value to *NULL* !' GET /folders.info → Data.Language enum['FR', 'NL', 'DE', 'XX']; POST /companies.list → Data.Language enum['FR', 'NL', 'DE', 'EN', 'ES', 'PT', 'XX']; GET /companies.info → Data.Folder {Type 'Folders', Id}."
+  },
+  {
+   "chift_dependency": "GET /accounting/clients and GET /accounting/suppliers (search, updated_after, pagination)",
+   "horus_support": "Workaround. Call POST /companies.list with Filter.IsCustomer=true or IsSupplier=true.\n- updated_after → Filter.ModifiedAfter (native; Horus recommends it for incremental sync).\n- search: Chift's search is an OR over name, email, first_name, last_name, external_reference, vat and company_number. Horus filters are AND-ed 'contains' filters, VatNumber matches exactly and needs IsVatLiable=true, and EnterpriseNumber cannot be filtered at all. So either fan out over Name, Email, ExternalReference, SearchKey and VatNumber and merge the results, or filter locally.\n- pagination and total: emulated.\n- bank_accounts: companies.list supports sideloading, but it is undocumented whether the Ibans array can be sideloaded. Otherwise resolve it through ibans.list or ibans.info, one call per company.\nThe single-record routes map to GET /companies.info, with the cross-folder guard (Data.Folder.Id = folder_id, otherwise 400).",
+   "label": "D",
+   "evidence": "POST /companies.list → Filter: 'The company must match **all specified** filters'; Filter.ModifiedAfter: 'Include only companies modified after a given date.'; Data.Ibans: array of {Type 'Ibans', Id}. Guide: Managing customers & suppliers: 'Search by VAT number, name, search key or external reference with companies.list'. Guide: Sideloading lists companies.list among the supported endpoints."
+  },
+  {
+   "chift_dependency": "GET /accounting/payment-terms (payment_term_id on invoices)",
+   "horus_support": "Workaround (synthetic catalogue), or an empty list. Horus has no payment-term entity or endpoint. It does document a compact payment-terms grammar, stored per company in CustomerPaymentDelay and SupplierPaymentDelay: '999[D|J|M][E|F|e|f]', e.g. 30E = 30 days, end of month; 15e = 15th of the next month; 2M = in 2 months, same day. The connector could publish id = the code (e.g. '30E') and name = its decoded meaning, built from the distinct codes on the folder's companies (companies.list) or from a fixed set of common codes (A). Invoices have no payment-term field: Horus requires an explicit DueDate and Chift's invoice create requires due_date, so payment_term_id is NA (ignored) on create_invoice.",
+   "label": "D",
+   "evidence": "Guide: Managing customers & suppliers: 'CustomerPaymentDelay and SupplierPaymentDelay follow the format 999[D|J|M][E|F|e|f]'; '30E 30 days, end of month'. Guide: Data model: a company has 'payment terms and usual payment modes'. POST /invoices.sales.new → DueDate * (required). No payment-term endpoint among the 72."
+  },
+  {
+   "chift_dependency": "GET /accounting/attachments (type=invoice|entry, document_id)",
+   "horus_support": "Workaround. Chift invoices and journal entries are both Horus book entries, so document_id is a book entry Id.\n- Main document: GET /book-entries.info?Id={document_id} returns the entry's Document reference ({Type 'Documents', Id}) in one call, with no FolderId or month window; check Data.Folder.Id = folder_id (cross-folder guard, otherwise 400). Then GET /documents.download returns raw bytes, which the connector base64-encodes. That is 2 calls per entry.\n- Annexes: annexes.new returns 'the generated annexed document's id', and the guide treats annexes as documents. So they can probably be downloaded by id with documents.download (A). book-entries.info references only the main Document, so finding annexes means calling documents.list (mandatory CreatedAfter/CreatedBefore window, no BookEntryId filter) and filtering on BookEntry.Id locally. Whether annexes appear there is not stated (?).",
+   "label": "D",
+   "evidence": "GET /book-entries.info → param[query] Id *; Data.Document {Type 'Documents', Id} (object|null); Data.Folder {Type 'Folders', Id}; GET /documents.download: 'Download the bytes for a specific document.' → param[query] Id *; POST /documents.list → CreatedBefore *, CreatedAfter *, Data.BookEntry; POST /book-entries.documents.annexes.new: 'The result will contain the generated annexed document's id.' Guide: Data model: 'A document is a dematerialised file linked to a book entry, as its main document or as an annex.' Guide: Documents & attachments: 'return the raw bytes of the file, not JSON.'"
+  },
+  {
+   "chift_dependency": "GET /accounting/bookyears",
+   "horus_support": "Workaround (minor). Call POST /fiscal-years.list with IncludeFuture=true.\n- name ← Heading (for example '2017 - 2018', not 'YYYY'; TRANSFORM or DIRECT).\n- start / end ← StartDate / EndDate, truncated to a date.\n- closed ← IsClosed, which only GET /fiscal-years.info returns, so one call per year.\nThe guide lists IsClosed among fiscal-year data, but the list response does not carry it.",
+   "label": "D",
+   "evidence": "POST /fiscal-years.list → Data.Heading example '2017 - 2018', StartDate, EndDate, Filter.IncludeFuture '*FALSE* by default'; GET /fiscal-years.info → Data.IsClosed (absent from the list response). Guide: Data model: fiscal year 'describes its closing status ... and whether the year IsClosed'."
+  },
+  {
+   "chift_dependency": "GET /accounting/payment-methods (payment_method_id on invoices)",
+   "horus_support": "Workaround (static). There is no endpoint, but Horus documents a fixed PaymentMode enum. Invoices accept it as PaymentMode, and companies carry it as UsualCustomerPaymentMode and UsualSupplierPaymentMode. The connector returns a constant list: id = the enum value as a string, name = its label ('0: Bank Transfer', '100: Manual', '110: Domiciliation', '200: Credit Card', '400: Paypal', '410: Doccle', '420: Digiteal', '900: Check', '910: Bill Draft'). The list is the same for every folder.",
+   "label": "D",
+   "evidence": "POST /invoices.sales.new → PaymentMode: number enum[0, 100, 110, 200, 400, 410, 420, 900, 910] '*NULL* by default'; POST /companies.new → UsualCustomerPaymentMode (same enum). Guide: Posting sales & purchase invoices: 'Payment information PaymentReferences , PaymentMode'."
+  }
+ ],
+ "ba_insights": [
+  "Good structural fit, unusual protocol. Every business object behind the 11 case routes exists in Horus with read and/or write support: third parties, GL accounts, journals, sales and purchase entries, misc operations, analytics on up to 8 dimensions, and open items. But Horus is an RPC API (named methods such as companies.list or invoices.sales.new) where reads with filters are POSTs. Every Chift GET becomes one or more Horus POSTs, so the connector is a translator, not a pass-through.",
+  "Authentication is now fully documented, with three points Chift's platform must handle. (1) Each license has its own api_url, returned during OAuth, which must be stored per consumer. (2) The token exchange uses grant_type=auth_code instead of the standard 'authorization_code'. (3) Refresh tokens are single-use and rotate on every refresh, so refreshes must be serialised per consumer; a race can silently disconnect a customer. API rights are those of the authorizing user (an accountant in Horus Office or an entrepreneur in Horus Mobile), so who authorizes decides which folders Chift can see.",
+  "Pagination does not exist in Horus. No endpoint has a page, size, cursor or total, history endpoints force month/year windows, and the guides never mention paging. Chift's {items, total, page, size} must be emulated by fetching everything, filtering, sorting and slicing. Mitigations: gzip, ModifiedAfter incremental sync (only on companies, book entries and account histories) and per-folder caching. Whether Horus silently caps large results is undocumented. That is the first question for Horus.",
+  "Many Chift routes are composite because the API reference has no invoice read model: no invoice list and no invoice-shaped get. GET /book-entries.info reads one entry by Id in a single call, without the daybook and month window that book-entries.list needs, which simplifies read-back after create and GET attachments. But like a book-entries.list element it returns only the header, totals, due date and references (company, main document, lines). Chift invoices must be rebuilt from book-entries.list (one call per daybook and period), account-histories.list (lines, VAT, analytics, matching), invoices.sales.outstanding.list (payment status, sales only), companies (partner) and documents (PDF). Sideloading (Include, with results under Included) is now documented on 4 endpoints and removes the extra calls for companies, daybooks and folders. Whether line items or IBANs can be sideloaded still has to be confirmed.",
+  "Terminology trap that matters in the client conversation. A Horus 'Folder' is Chift's folder (the company whose books are kept). A Horus 'Company' is a client, supplier or beneficiary of that folder: one record with role flags. Because one record holds both roles, Chift's force_merge maps cleanly to updating that record's flags. Daybook = journal, cost schema / cost section = analytic plan / analytic account, account history = entry line, MatchNo = matching number.",
+  "VAT codes, payment terms and payment methods are not entities in Horus. VAT is stated on each line as TaxRate + TaxType + TaxOrigin (plus Kind and Condition for purchases, and a country for OSS), with Belgian- and Luxembourg-specific values, and the allowed combinations sit in spreadsheets we were not given. The connector must define its own VAT-code catalogue, the biggest functional design decision. We propose one synthetic id grammar ('S-21-0-0' for sales, 'P-21-2-0-0-1-true' for purchases) for listing, posting and reading. Horus does not return TaxKind on read, so a purchase code is returned on read only when it is unambiguous; otherwise tax_code is null and the rate and amount are kept. Payment methods become a fixed list from the PaymentMode enum. Payment terms can only be a synthetic list built from the documented delay codes ('30E' etc.), and Horus always needs an explicit due date.",
+  "The posting workflow is the main product decision. Horus deliberately creates API entries unconfirmed so the accountant reviews them first, while Chift's create routes default to 'posted' and promise automatic numbering when no invoice number is given. Both are possible in Horus (Confirmed is an optional flag on the invoice and operation creates), so the connector maps 'draft' to unconfirmed and 'posted' to confirmed, with a per-consumer 'always push unconfirmed' setting recommended where the accountant must review API entries. Which default fits fiduciary clients must be agreed by Chift and Horus. Horus can auto-number only confirmed operations (misc, bank, financial), not invoices, so a confirmed invoice needs a valid numeric number.",
+  "Immutable-ledger behaviour Chift's clients must know about. Updating an invoice or operation creates a new book entry id and deletes the attached document, and Horus itself says to sync on daybook plus entry number rather than on id. Only unconfirmed misc operations created through the API can be deleted, and no deletion feed exists. There is no idempotency key: the connector deduplicates clients on ExternalReference and VAT (Horus refuses duplicate VAT numbers by default) and entries on DocumentNo (a pre-check whenever a number is supplied, and again before any retry).",
+  "Operationally mature contract, with gaps that are now few and specific. Errors are uniform (200/400/401/403/404/500 with {ErrorType, Details, Message}) and come with explicit retry advice. A written compatibility policy says breaking changes are announced by email and asks for tolerant clients. Still missing: rate limits, result-size caps, the ErrorType catalogue, the tax-combination spreadsheets, sideloading paths per endpoint, and any sandbox. Tests run on real data, so Chift needs a test license or test folder from Horus.",
+  "Recommended go/no-go framing for the client. With one calibration for all routes (supported = one native endpoint and deterministic transformations; workaround = extra calls, emulation or a lost capability), Get folders and Get analytic plans are supported, and the other 9 case routes, including all four create routes, are supported with a workaround. None is unsupported. The real risks are performance on large folders (no paging, unknown caps), VAT-code modelling, the confirmed/numbering policy, foreign-currency amounts on read, and purchase-side outstanding and payment status (ledger-line level only). These should be confirmed with Horus (developer@horus-software.be) and tested on a test license before committing to a timeline."
+ ]
+}
