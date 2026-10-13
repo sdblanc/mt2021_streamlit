@@ -1353,7 +1353,7 @@
  "horus_required_without_chift_source": [
   {
    "horus_field": "FolderId (POST /invoices.*.new and all lookups) when Chift folder_id is null",
-   "how_to_fill": "D7: if exactly one folder was selected at activation, use it; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; otherwise reject 400 'folder_id required'.",
+   "how_to_fill": "D7: if exactly one folder was selected at activation, use it; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; otherwise reject 400 'folder_id required'. A folder_id outside the activation selection is rejected with 400 'folder not selected for this connection' before any Horus call (D7).",
    "label": "D"
   },
   {
@@ -1363,17 +1363,17 @@
   },
   {
    "horus_field": "CompanyId when Chift partner_id is null",
-   "how_to_fill": "partner_info (D10): SearchKey = sanitised account_number; POST /companies.list Filter.SearchKey with an exact, same-folder post-filter; POST /companies.update to set a missing IsCustomer/IsSupplier flag; otherwise POST /companies.new. With neither partner_id nor partner_info, reject 400.",
+   "how_to_fill": "partner_info (proposal, D10, C8): companies.list by ExternalReference, then by exact SearchKey (account_number as sent; 422 if sanitisation would change it), with a same-folder post-filter; name check against account_name (409 or a logged warning on a mismatch, C8); a missing IsCustomer/IsSupplier flag → 422 unless Chift enables the companies.update flag step; otherwise companies.new, written only after every other check has passed. With neither partner_id nor partner_info, reject 422.",
    "label": "A"
   },
   {
    "horus_field": "Number (required on invoices.sales.new; nullable on purchases) when invoice_number is null",
-   "how_to_fill": "Draft (Confirmed=false): 0 ('can be 0 if not confirmed'). Posted sale: max(DocumentNo)+1 from POST /book-entries.list (FolderId, DaybookId, fiscal-year months), with a race-condition risk, or reject and ask for invoice_number. Posted purchase: null.",
+   "how_to_fill": "Unconfirmed (draft, review mode, or posted without invoice_number under the proposed default, C7): 0 on sales and purchases ('can be 0 if not confirmed'), returned as 'draft'. Alternatives for posted invoices: reject with 422, or, as an opt-in once Horus confirms its numbering rules (H3), max(DocumentNo)+1 from POST /book-entries.list (FolderId, DaybookId, fiscal-year months) under a per-daybook lock (race risk). Number null on purchases is not sent: what Horus stores for a confirmed purchase without a number is undocumented (H3).",
    "label": "A"
   },
   {
    "horus_field": "InvoiceLines[].TaxOrigin (required)",
-   "how_to_fill": "Second component of the D2 tax code (S-{TaxRate}-{TaxOrigin}-… / P-{TaxRate}-{TaxOrigin}-…), validated against the catalogue (sales enum 0-20, purchases enum 0-39).",
+   "how_to_fill": "Second component of the D2 tax code, validated against the folder's tax-combination list (Legislation + direction, appendix C). Not validated against the reference enum: invoices.sales.new lists TaxOrigin 0–20 and invoices.purchases.new 0–39, while the LU files use sales origins up to 35 and purchase origins 40–56, and several codes carry different labels (H1).",
    "label": "D"
   },
   {
@@ -1383,17 +1383,17 @@
   },
   {
    "horus_field": "InvoiceLines[].TaxKind / TaxCondition / TaxConditionValue (purchases; optional in the schema but part of the accepted combination)",
-   "how_to_fill": "Fourth to sixth components of the D2 purchase code P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}, e.g. TaxCondition 3 'PCT' with TaxConditionValue '50' for 50% deductible VAT. 'x' (component not used) → null.",
+   "how_to_fill": "Fourth to sixth components of the D2 purchase code P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}, e.g. TaxCondition 3 'PCT' with TaxConditionValue '50' for 50% deductible VAT (the purchases file's 'Available values' sheet shows 0.5: format to confirm, H1). On LU rows with TaxCondition 0 (COUNTRY), TaxConditionValue is the country code. 'x' (component not used) → null.",
    "label": "D"
   },
   {
-   "horus_field": "InvoiceLines[].TaxCountryCode (sales, needed for OSS TaxOrigin=13)",
-   "how_to_fill": "Fifth component of the D2 OSS sales code S-{TaxRate}-13-{TaxType}-{TaxCountryCode}; shipping_country is only a cross-check. Omitted on non-OSS lines.",
+   "horus_field": "InvoiceLines[].TaxCountryCode (sales OSS rows: BE TaxOrigin 13; LU TaxOrigin 24, 26, 29)",
+   "how_to_fill": "Fifth component of the D2 OSS sales code S-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxCountryCode}; shipping_country is only a cross-check. Omitted on non-OSS lines. The reference says TaxCountryCode is 'Only used for OSS Vat lines (TaxOrigin = 13)', while the LU sales file marks OSS rows with origins 24, 26 and 29 (to confirm, H1).",
    "label": "D"
   },
   {
    "horus_field": "InvoiceLines[].CostLines[].Amount (required inside CostLines)",
-   "how_to_fill": "BaseAmount × product of the plan percentages / 100, rounded with the largest-remainder method on the per-line product allocation (D8), so the cost lines sum exactly to BaseAmount.",
+   "how_to_fill": "BaseAmount × product of the plan percentages / 100, rounded with the largest-remainder method on the per-line product allocation (D8), so the cost lines sum exactly to BaseAmount; rows rounding to 0.00 are dropped.",
    "label": "D"
   },
   {
@@ -1408,12 +1408,12 @@
   },
   {
    "horus_field": "companies.new required fields in the partner_info flow: SearchKey, Name, IsCustomer, IsSupplier, IsVatLiable, LanguageCode, CountryCode",
-   "how_to_fill": "create_client's required-field rules (D10): SearchKey = partner_info.account_number sanitised with create_client's SearchKey rules (unique within the folder); Name = account_name; IsCustomer = invoice_type in customer_*; IsSupplier = invoice_type in supplier_*; IsVatLiable = false (no source; flag as a data-quality warning); LanguageCode = GET /folders.info → Language (D9 write-side fallback, sent as-is even when 'XX'); CountryCode = GET /folders.info → CountryCode; optional ExternalReference = a Chift-side key.",
+   "how_to_fill": "create_client's required-field rules (D10): SearchKey = partner_info.account_number as sent (it must already satisfy create_client's SearchKey rules, otherwise 422; unique within the folder); Name = account_name; IsCustomer = invoice_type in customer_*; IsSupplier = invoice_type in supplier_*; IsVatLiable = false (no source); LanguageCode = GET /folders.info → Language (D9 write-side fallback, sent as-is even when 'XX'); CountryCode = GET /folders.info → CountryCode; ExternalReference = the raw account_number when Chift confirms it is a third-party code (C8). The defaulted values (IsVatLiable=false, LanguageCode, CountryCode) are logged, and returned as warnings if Chift adds a warning channel (C3).",
    "label": "A"
   },
   {
-   "horus_field": "Support call (partner_info, D10): POST /companies.update → CompanyId * + IsCustomer or IsSupplier",
-   "how_to_fill": "CompanyId = the Id of the company matched by SearchKey; set only the missing flag to true (IsCustomer for customer_*, IsSupplier for supplier_*); every other field null or omitted, never \"\".",
+   "horus_field": "Support call (partner_info, D10, opt-in by Chift policy): POST /companies.update → CompanyId * + IsCustomer or IsSupplier",
+   "how_to_fill": "CompanyId = the Id of the matched company; set only the missing flag to true (IsCustomer for customer_*, IsSupplier for supplier_*); every other field null or omitted, never \"\".",
    "label": "D"
   },
   {
@@ -1423,12 +1423,12 @@
   },
   {
    "horus_field": "Support calls: POST /book-entries.list DaybookId + StartMonth/StartYear/EndMonth/EndYear; POST /account-histories.list StartMonth/StartYear/EndMonth/EndYear",
-   "how_to_fill": "DaybookId as resolved. Period = the bounds of the fiscal year containing invoice_date (POST /fiscal-years.list Filter.Dates=[invoice_date]). This is safer than the invoice month in case Horus assigns a different accounting month.",
+   "how_to_fill": "DaybookId as resolved. Period = the bounds of the fiscal year containing invoice_date (POST /fiscal-years.list Filter.Dates=[invoice_date]). This is safer than the invoice month in case Horus assigns a different accounting month. Filter.DocumentNo for the duplicate pre-check; Filter.CompanyId for the heuristic check on supplier invoices without a number.",
    "label": "D"
   },
   {
    "horus_field": "Support call: GET /fiscal-years.info Id",
-   "how_to_fill": "Data[].Id of the fiscal year returned by POST /fiscal-years.list Filter.Dates=[invoice_date]; cached.",
+   "how_to_fill": "Data[].Id of the fiscal year returned by POST /fiscal-years.list Filter.Dates=[invoice_date]; a year already closed may be cached, an open year is re-read with the closure check.",
    "label": "D"
   },
   {
@@ -1442,12 +1442,12 @@
    "label": "F"
   },
   {
-   "horus_field": "[optional, decision needed] OverrideTaxAmounts",
-   "how_to_fill": "CONSTANT true, so Horus books the issued invoice's exact VAT (no recomputation from base × rate).",
+   "horus_field": "[optional] OverrideTaxAmounts",
+   "how_to_fill": "CONSTANT true (proposed decision 'VAT amounts as issued', to agree with Chift in C2), so Horus books the issued invoice's exact VAT instead of recomputing base × rate and adapting within 1 cent. regroup_lines, correction lines and invoice-level VAT depend on it. Alternative: false, where what Horus does beyond 1 cent is undocumented (Horus question on amount validation). An optional per-consumer check of tax_amount against untaxed_amount × tax_rate / 100 can be paired with it (off by default).",
    "label": "A"
   },
   {
-   "horus_field": "[optional, decision needed] AllowUnbalanced",
+   "horus_field": "[optional] AllowUnbalanced",
    "how_to_fill": "CONSTANT false (never force unbalanced entries).",
    "label": "D"
   },
@@ -1464,14 +1464,14 @@
  ],
  "limitations": [
   {
-   "description": "No VAT-code entity or VAT-code list endpoint appears among the 72 documented endpoints. Invoice lines need TaxRate + TaxOrigin + TaxType (+ TaxKind/TaxCondition/TaxConditionValue for purchases), checked against external reference files of accepted combinations. VatCode/VatHeading appear only as read-only output (account-histories VatDetail), where TaxCondition has an extra value '4 = Article' that the purchase input does not accept (enum[0, 1, 2, 3]). Accounts carry VAT settings (VatRate/VatNat) that can help default or validate a decoded combination.",
-   "impact": "Chift GET vat-codes must be emulated from a connector-maintained catalogue with the canonical D2 id grammar (S-{TaxRate}-{TaxOrigin}-{TaxType}[-{TaxCountryCode}] / P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}), and lines[].tax_code is decoded from it. The catalogue must be maintained whenever Horus changes its accepted combinations, and the combination files are not among the admissible sources. Read-side asymmetry: VatDetail has no TaxKind, so get_invoices returns tax_code = null for purchase combinations that differ only by TaxKind (D2); a purchase tax_code written here may not survive the round trip.",
+   "description": "No VAT-code list endpoint appears among the 72 documented endpoints, and invoice lines take no VAT code. They need TaxRate + TaxOrigin + TaxType (+ TaxKind/TaxCondition/TaxConditionValue for purchases), and only the combinations in the Horus tax-combination files are valid (appendix C: one list per legislation BE/LU and direction). VatCode/VatHeading appear only as read-only output (account-histories VatDetail), and their meaning is undocumented; there, TaxCondition has an extra value '4 = Article' that the purchase input does not accept (enum[0, 1, 2, 3]). The LU files use TaxOrigin codes outside the reference enums (sales up to 35 vs 0–20; purchases 40–56 vs 0–39), and several codes carry different labels in the reference and in the files. Accounts carry VAT settings (VatRate/VatNat) that can help default or validate a decoded combination.",
+   "impact": "Chift GET vat-codes must be emulated from a connector-maintained, folder-scoped catalogue with the canonical D2 id grammar (S-{TaxRate}-{TaxOrigin}-{TaxType}[-{TaxCountryCode}] / P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}), and lines[].tax_code is decoded from it. The catalogue is built from the published spreadsheets and must be refreshed whenever Horus changes them; Horus must confirm that the files are current and which source is authoritative for the LU codes (H1). Read-side asymmetry: VatDetail has no TaxKind, so get_invoices returns tax_code = null for purchase combinations that differ only by TaxKind (D2); a purchase tax_code written here may not survive the round trip, unless VatCode proves to be stable and one-to-one with a combination (H1).",
    "label": "D"
   },
   {
    "description": "Invoice Number is numeric (Chift invoice_number is a string). Invoices have no AutoGenerateNumber field, unlike miscellaneous operations, banks and financials. No uniqueness constraint, idempotency key or external reference field is documented for invoices.",
-   "impact": "Non-numeric invoice numbers are rejected. Auto-numbering for posted sales must be emulated (max+1, with a race risk). Idempotency must be emulated with a book-entries.list DocumentNo pre-check that returns 409.",
-   "label": "F"
+   "impact": "Non-numeric invoice numbers (and numbers with leading zeros) are rejected. Horus cannot generate a missing invoice number: the proposed default pushes such invoices unconfirmed with Number 0 and returns them as draft (Chift decision C7); connector numbering (max+1, race risk) is an opt-in only. Idempotency is emulated, best effort, with a book-entries.list DocumentNo pre-check that returns 409; supplier invoices without a number get only a heuristic check (supplier, date, total), and a create without a number is never retried automatically.",
+   "label": "A"
   },
   {
    "description": "No dedicated field for reference (the supplier's invoice number on purchases). Header free text is limited to Comment and PaymentReferences.",
@@ -1480,7 +1480,7 @@
   },
   {
    "description": "Several Chift inputs have no Horus field: force_financial_period, withholding_tax, nl_payment_terms_split, start_date/end_date, delivery_date, payment_term_id, and line unit_price/quantity/unit_of_measure.",
-   "impact": "These are either rejected (force_financial_period when it differs from the invoice month, withholding_tax, nl_payment_terms_split) or ignored with a warning (accrual/delivery dates, payment term, quantity/price). Clients relying on them lose that data.",
+   "impact": "These are either rejected with 422 (force_financial_period when it differs from the invoice month, withholding_tax, nl_payment_terms_split) or ignored and logged, not returned to the caller, because the Chift create response has no warnings field (accrual dates, payment term, quantity/price). delivery_date: accepted when absent or in the invoice month; in another month, rejected or accepted with the limitation that Horus books VAT by invoice date, per Chift (C3). Clients relying on these fields lose that data.",
    "label": "D"
   },
   {
@@ -1489,9 +1489,9 @@
    "label": "F"
   },
   {
-   "description": "Currency: EUR is implicit (null). Only 32 other ISO codes are accepted. The folder must be configured for currencies, and no API field exposes that setting. The CurrencyRate direction is undocumented, and so is the currency of the invoice amounts.",
-   "impact": "Invoices in other currencies are rejected. A rate in the wrong direction would misstate EUR amounts, so validate with Horus before go-live. D4 assumption: account-history Debit/Credit and CompanyDetail amounts are in EUR, so the response pairs echoed invoice-currency amounts with the echoed currency and returns the EUR partner-line amount only as main_currency_total.",
-   "label": "F"
+   "description": "Currency: EUR is implicit (null). Only 32 other ISO codes are accepted. The folder must be configured for currencies, and no API field exposes that setting. The CurrencyRate direction is undocumented, and so are the currency of the invoice amounts and the date of the default 'rate of the day' (invoice Date or posting date).",
+   "impact": "Invoices in currencies outside the enum are rejected. A rate in the wrong direction would misstate EUR amounts, so validate with Horus before go-live. D4 assumption: account-history Debit/Credit and CompanyDetail amounts are in EUR, so the response pairs echoed invoice-currency amounts with the echoed currency and returns the EUR partner-line amount only as main_currency_total. Sending non-EUR amounts in the invoice currency is itself an assumption (H4).",
+   "label": "A"
   },
   {
    "description": "Create returns only {Id} (Guide: Responses & errors). GET /book-entries.info reads the entry back by that Id with no period, but it returns entry-level data only: lines appear as references (AccountHistories: Type + Id), without amounts, VAT, cost detail, currency or account search keys. Line data comes from account-histories.list, which needs FolderId and mandatory period parameters, or from GET /account-histories.info at one call per line.",
@@ -1505,7 +1505,7 @@
   },
   {
    "description": "Credit notes use Type=1, but the sources do not say whether amounts must be positive, or whether a credit note may be posted into a 200/100 daybook (or an invoice into 250/150). The posting guide does not tie Type to a daybook type. The connector applies the D1 fallback (customer_refund 250 → 200, supplier_refund 150 → 100), which relies on that undocumented acceptance.",
-   "impact": "A wrong sign or a refused daybook gives a Horus 400 or reversed postings. Credit notes posted into a 200/100 daybook can be told apart on read only by the partner-line sign (D1, get_invoices). Needs Horus confirmation before go-live.",
+   "impact": "A wrong sign or a refused daybook gives a Horus 400 or reversed postings. Credit notes posted into a 200/100 daybook are told apart on read by the partner-line sign, which D1 applies in folders without a credit-note daybook (get_invoices). Needs Horus confirmation before go-live. The sign policy for input amounts is a proposal (see the sign-policy edge case; C5, H2).",
    "label": "?"
   },
   {
@@ -1520,17 +1520,17 @@
   },
   {
    "description": "Confirmed means confirmed by the accountant. API entries are unconfirmed by default precisely so the accountant can review them in Horus Office. The Chift default status is 'posted'.",
-   "impact": "Mapping posted to Confirmed=true bypasses the fiduciary's review. D12: offer the per-consumer setting 'always push unconfirmed' (recommended where the accountant must review API entries); which default fits fiduciary clients is an open product decision.",
-   "label": "F"
+   "impact": "Mapping 'posted' to Confirmed=true would mark invoices as accountant-validated without review. D12 proposes a posting mode chosen per connection at activation: review (push unconfirmed; proposed default) or direct (Confirmed=true for 'posted'). Decision owner: Chift (C1). In review mode, read routes show these entries only when unposted entries are requested (for example outstanding items with unposted_allowed=true) until the accountant confirms them; in direct mode a confirmed invoice cannot be undone through the API, and a 403 is possible if the user may not confirm (undocumented).",
+   "label": "D"
   },
   {
    "description": "Horus legislations are BE and LU only, and the TaxOrigin labels are Belgian/Luxembourgish tax categories (e.g. 'Prestation hors Belgique', 'Prestations hors Luxembourg').",
-   "impact": "Non-BE/LU tax scenarios cannot be expressed, and NL-specific Chift fields have no meaning here.",
+   "impact": "Non-BE/LU tax scenarios cannot be expressed, and NL-specific Chift fields have no meaning here. Each legislation has its own combination list, so the VAT-code catalogue is per folder.",
    "label": "D"
   },
   {
    "description": "The API has no invoice delete or cancel endpoint. The only book-entry delete is book-entries.miscellaneous-operations.delete, which works only on unconfirmed miscellaneous operations created through the API.",
-   "impact": "The connector cannot undo a wrongly pushed or duplicated invoice, or roll back a multi-step flow (e.g. a failed fallback PDF attach); the accountant must fix it in Horus Office. That is why the duplicate pre-check before any retry is critical. The connector can never produce Chift status 'cancelled'.",
+   "impact": "The connector cannot undo a wrongly pushed or duplicated invoice, or roll back a multi-step flow (e.g. a failed fallback PDF attach); the accountant must fix it in Horus Office. That is why the duplicate pre-check before any retry is critical. The connector can never produce Chift status 'cancelled'. A company created from partner_info is not rolled back either (no company delete endpoint).",
    "label": "D"
   },
   {
@@ -1545,7 +1545,7 @@
   },
   {
    "description": "partner_info carries only account_number (no description in the Chift spec, read as the company SearchKey, D10) and account_name. Companies created from it have no VAT number, no address, IsVatLiable=false, and the folder's language and country.",
-   "impact": "A wrong reading of account_number would create or reuse the wrong third party. Companies created this way need completing in Horus Office; calling Create client/supplier first is the reliable path.",
+   "impact": "A wrong reading of account_number would create or reuse the wrong third party. Companies created this way need completing in Horus Office; calling Create client/supplier first is the reliable path. The lookup uses ExternalReference first, then the exact code as sent: a code that sanitising would change is rejected, because two codes differing only by removed characters could otherwise resolve to the same company; reuse requires a name match (409 or a logged warning on a mismatch, C8).",
    "label": "A"
   }
  ],
