@@ -323,7 +323,7 @@ Minor decisions: D6 (one daybook-type table), D7 (one folder rule), D8 (one anal
 | Fact | Value | Source |
 |---|---|---|
 | Horus endpoints | 72 (incl. `book-entries.info`); 23 GET, 47 POST, 2 DELETE | API reference |
-| Endpoints used by the 11 routes | 49 (including optional ones) | analysis |
+| Horus endpoints called by the 11 routes | 40 (including optional ones; 49 referenced in the mappings) | analysis |
 | Auth | OAuth 2 code; `grant_type=auth_code`; code valid 2 min; access token 1 h; refresh token single-use | Guides: Authorization flow, Token lifecycle |
 | Base URL | per license (`api_url` from OAuth) | Guide: Authentication overview |
 | Sideloading | `Include` on 4 endpoints | Guide: Sideloading |

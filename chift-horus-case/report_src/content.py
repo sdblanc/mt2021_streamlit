@@ -1,3 +1,4 @@
+import re
 """Report sections. Data-driven parts read the harmonised mapping JSON; curated text lives in curated.py."""
 from render import esc, inline, rich, chip, lbl, cls, field_table, endpoint_list, flow, bullet_list, VERDICT_TEXT, route_card
 from content_static import TITLE, DESCRIPTION, RAIL_LABEL, header_html, footer_html, SCOPE_HTML, ARCH_SVG, CONCEPTS, CONVENTIONS
@@ -30,13 +31,14 @@ def summary_section(groups, cross):
     used = set()
     for g in groups.values():
         for e in g['horus_endpoints']:
-            if e['path'] in inventory:
+            card = (e.get('cardinality') or '').lower()
+            if e['path'] in inventory and not re.match(r'^(not used|not called|0 for this route|0 \(used by|never)', card):
                 used.add(e['path'])
     tiles = ''.join(
         f'<div class="tile"><div class="n">{counts[k]}</div><div class="t">{chip(k)}</div></div>'
         for k in ['supported', 'workaround', 'not_supported', 'unknown'])
     tiles += f'<div class="tile"><div class="n">{len(rows)}</div><div class="t">Chift routes analysed</div></div>'
-    tiles += f'<div class="tile"><div class="n">{len([p for p in used if p.startswith("/")])}</div><div class="t">of 72 Horus endpoints used, including optional ones</div></div>'
+    tiles += f'<div class="tile"><div class="n">{len([p for p in used if p.startswith("/")])}</div><div class="t">of 72 Horus endpoints called, including optional ones</div></div>'
     html = [f'<p class="lede">{K.SUMMARY_LEDE}</p>', f'<div class="overview">{tiles}</div>']
     html.append('<h3>Key findings</h3><ul class="tight">' + ''.join(f'<li>{x}</li>' for x in K.KEY_FINDINGS) + '</ul>')
     html.append(f'<div class="note key"><span class="note-title">Recommendation</span>{K.RECOMMENDATION}</div>')

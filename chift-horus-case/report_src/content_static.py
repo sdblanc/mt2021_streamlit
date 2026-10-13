@@ -156,8 +156,8 @@ CONVENTIONS = [
     ('Sideloading', 'An <code>Include</code> parameter returns related entities under <code>Included</code>, on four endpoints only: book-entries.list, account-histories.list, companies.list and invoices.sales.outstanding.list.', 'F'),
     ('Pagination', 'No list endpoint has paging parameters and the guides describe none. Lists return the full result, so the connector must emulate Chift’s page, size and total.', 'D'),
     ('Filters', 'String filters use “contains”; all filters must match. Many lists offer <code>ModifiedAfter</code>/<code>ModifiedBefore</code> for incremental synchronisation. Ledger periods are expressed in months.', 'F'),
-    ('Updates', 'Master data uses partial updates (null keeps a value, an empty string erases it). Invoice and operation updates are full replacements that create a new book entry id and drop the original attachment.', 'F'),
-    ('Errors', 'Errors return <code>{ErrorType, Details, Message}</code> with status 400, 401, 403, 404 or 500. Horus advises: refresh once on 401, do not retry 400, back off on 500. The list of ErrorType values is not documented.', 'F'),
+    ('Updates', 'Master data uses partial updates (null keeps a value, an empty string erases it). Invoice and operation updates (<code>.update</code>) are full replacements that create a new book entry id and drop the original attachment. Exception: <code>book-entries.miscellaneous-operations.lines.update</code> changes some lines in place (no amount changes).', 'F'),
+    ('Errors', 'Errors other than authorisation errors (401) return <code>{ErrorType, Details, Message}</code>. Status codes: 400, 401, 403, 404, 500. Horus advises: refresh once on 401, do not retry 400, back off on 500. The list of ErrorType values is not documented.', 'F'),
     ('Versioning', 'New endpoints, optional parameters and response properties can appear without notice; breaking changes are announced by email. The connector must ignore unknown properties.', 'F'),
     ('Testing', 'Requests run against the license’s real database. Write tests need a test license or test folder; no sandbox is documented.', 'F'),
 ]
