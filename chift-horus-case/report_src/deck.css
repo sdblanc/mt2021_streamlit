@@ -244,3 +244,15 @@ ul.b .no { position: absolute; left: 0; top: 0.05em; width: 26px; height: 26px; 
 ul.b .lbl { color: var(--accent); font-weight: 700; }
 .tag.basis { background: transparent; border: 1px solid currentColor; font-size: 11px; padding: 3px 6px; }
 .tag.b-F { color: var(--ok); } .tag.b-D { color: #2c46cf; } .tag.b-A { color: var(--warn); } .tag.b-Q { color: var(--bad); }
+
+/* fixer pass: centred stage at any width, overview grid, flow/two-col balance, A2 columns */
+.viewport { grid-template-columns: 100%; grid-template-rows: 100%; }
+body.overview .stage { width: 100%; }
+.lay-flow .body { justify-content: center; }
+.lay-flow .callout { margin-top: 8px; }
+.lay-flow .step h3 { font-size: 18px; }
+.lay-flow .step p { font-size: 16px; }
+.lay-two .body, .lay-closing .body { justify-content: center; }
+.lay-two .cols, .lay-closing .cols { flex: 0 1 auto; }
+.lay-two .callout, .lay-closing .callout { margin-top: 8px; }
+.cols.c3 ul.b li { font-size: 16px; }

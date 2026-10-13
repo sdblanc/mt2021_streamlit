@@ -2,6 +2,7 @@
 
 > **For you, not for Chift.** This guide is about understanding, not a script to memorise. If you can explain each "why" below in your own words, you can defend the work.
 > Present from `chift_horus_connector_assessment.html` (the concise report). Use `chift_horus_mapping_report.html` (the detailed technical reference) only to look things up: it is kept unchanged, so where it differs from the concise report, the concise report and its appendix B (corrections) are the position you defend. `03_critical_review_register.md` lists every issue found in review.
+> For the meeting itself, present from `chift_horus_assessment_deck.html` (21 slides built from the concise report). Press **N** to show the speaker notes, **O** for an overview of all slides, **F** for full screen.
 
 ---
 

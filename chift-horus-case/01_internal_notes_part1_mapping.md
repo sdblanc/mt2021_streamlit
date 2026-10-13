@@ -442,6 +442,7 @@ The interview guide (`02_interview_prep_guide.md`) explains the reasoning in pla
 | File | What it is |
 |---|---|
 | `chift_horus_connector_assessment.html` | **Main deliverable** for Chift: concise, interview-ready report (self-contained; open in any browser) |
+| `chift_horus_assessment_deck.html` | Slide deck for the presentation (21 slides from the concise report, speaker notes with N, overview with O) |
 | `chift_horus_mapping_report.html` | Detailed technical reference, kept unchanged (pre-review positions; corrections listed in the assessment's appendix B) |
 | `01_internal_notes_part1_mapping.md` | These notes (internal) |
 | `02_interview_prep_guide.md` | Interview guide: approach, key mapping decisions, concepts, assumptions, likely questions, what to refer to technical colleagues (internal) |
