@@ -58,7 +58,7 @@ def with_basis(it):
 def summary(D):
     routes = D['routes']
     counts = {k: sum(1 for r in routes if r['feasibility'] == k) for k in FZ}
-    h = [f'<p class="lede">{T.ANSWER}</p>']
+    h = [f'<p class="lede">{T.answer(routes)}</p>']
     tiles = ''.join(f'<div class="tile"><div class="n">{counts[k]}</div><div class="t">{fz(k)}</div></div>' for k in FZ)
     tiles += f'<div class="tile"><div class="n">{len(routes)}</div><div class="t">Chift routes analysed (10 in Task A, outstanding items in Task B)</div></div>'
     h.append(f'<div class="overview">{tiles}</div>')
@@ -166,15 +166,26 @@ def limitations(D):
     return ''.join(h)
 
 
+def q_rows(qs):
+    out = []
+    for q in qs:
+        tier = int(q['tier'])
+        pr = {1: '<span class="tier tier-1">Before build</span>', 2: '<span class="tier tier-2">Route design</span>', 3: '<span class="tier tier-3">Verify in a test folder</span>'}.get(tier, '')
+        ref = '' if q['in_reference'] else ' <span class="tag" title="Not in the detailed reference">new</span>'
+        extra = f' <span class="sub">({esc(q["merged_or_remark"])})</span>' if q.get('merged_or_remark') else ''
+        out.append(f'<tr id="q-{esc(q["id"].lower())}"><td class="num">{esc(q["id"])}{ref}</td><td>{esc(q["who"])}<br>{pr}</td><td>{inline(q["short"])}{extra}</td><td>{inline(q["why"])}</td><td>{esc(q["routes"])}</td></tr>')
+    return ''.join(out)
+
+
 def questions(D):
-    qs = sorted(D['lq']['questions'], key=lambda q: (q['priority'], 0 if q['who'] == 'Horus' else 1))
-    h = [f'<p>{T.QUESTIONS_INTRO}</p>']
-    h.append('<div class="table-wrap"><table class="q-table"><thead><tr><th>#</th><th>For</th><th>Question</th><th>Why it matters</th><th>Routes</th><th>Ref.</th></tr></thead><tbody>')
-    for i, q in enumerate(qs, 1):
-        pr = '<span class="tier tier-1">Before build</span>' if q['priority'] == 1 else '<span class="tier tier-2">Route design</span>'
-        ref = esc(q['ref']) if q['ref'] and q['ref'] != 'new' else 'New'
-        h.append(f'<tr><td class="num">Q{i}</td><td>{esc(q["who"])}<br>{pr}</td><td>{inline(q["question"])}</td><td>{inline(q["why"])}</td><td>{esc(q["routes"])}</td><td class="num">{ref}</td></tr>')
-    h.append('</tbody></table></div>')
+    qs = sorted(D['questions'], key=lambda q: (int(q['tier']), 0 if q['who'] == 'Horus' else 1, int(q['id'][1:])))
+    head = '<div class="table-wrap"><table class="q-table"><thead><tr><th>#</th><th>For</th><th>Question</th><th>What depends on it</th><th>Routes</th></tr></thead><tbody>'
+    first = [q for q in qs if int(q['tier']) == 1]
+    rest = [q for q in qs if int(q['tier']) != 1]
+    h = [f'<p>{T.QUESTIONS_INTRO}</p>', '<h3 id="q-before">Before build</h3>', head + q_rows(first) + '</tbody></table></div>']
+    h.append('<details class="route inner" id="q-other"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>'
+             f'Other open questions ({len(rest)})</span><span class="r-line">Questions that shape one route\u2019s design, or that can be checked in a test folder. '
+             'They are referred to by id in the tables above.</span></summary><div class="r-body">' + head + q_rows(rest) + '</tbody></table></div></div></details>')
     h.append(f'<p class="small">{T.QUESTIONS_NOTE}</p>')
     h.append('<h3 id="next-steps">Proposed next steps</h3><ol class="tight">' + ''.join(f'<li>{s}</li>' for s in T.NEXT_STEPS) + '</ol>')
     return ''.join(h)
@@ -202,7 +213,7 @@ def build(out_html):
         ('routes', '3', 'Route mapping (Task A)', routes(D), [('rt-details', 'Considerations per route')]),
         ('fields', '4', 'Field mappings (Task B)', task_b(D), [(f'tb-{k}', t) for k, t, _ in T.TASKB_ORDER]),
         ('limits', '5', 'Key limitations and design considerations', limitations(D), []),
-        ('questions', '6', 'Open questions and next steps', questions(D), [('next-steps', 'Next steps')]),
+        ('questions', '6', 'Open questions and next steps', questions(D), [('q-before', 'Before build'), ('next-steps', 'Next steps')]),
         ('appendix', 'A–B', 'Appendices', appendix(D), []),
     ]
     rail = [(sid, f'{num} {title}', subs) for sid, num, title, _, subs in secs]

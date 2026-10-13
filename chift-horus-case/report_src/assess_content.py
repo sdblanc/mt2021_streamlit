@@ -25,11 +25,55 @@ FOOTER_HTML = ('Prepared by Silas Deblanc for the Chift product/tech case. Based
                'Software API documentation listed in appendix A. Proposals in this report are analysis, not commitments on behalf of Chift or Horus.')
 
 # ---------- 1. Executive summary ----------
-ANSWER = ''  # set after the route assessments are final (see bottom of file)
+SHORT = {  # route display names used in the summary sentence
+    'Client creation': 'client creation', 'Journal retrieval': 'journals', 'Ledger account creation': 'ledger account creation',
+    'Chart of accounts retrieval': 'chart of accounts', 'Accounting folders retrieval': 'folders', 'Miscellaneous operation creation': 'miscellaneous operations',
+    'Analytic plans retrieval': 'analytic plans', 'Analytic accounts retrieval': 'analytic accounts', 'Invoice retrieval': 'invoice retrieval',
+    'Invoice creation': 'invoice creation', 'Outstanding items': 'outstanding items',
+}
+
+
+def _names(rs):
+    out = []
+    for r in rs:
+        key = next((k for k in SHORT if r['route'].startswith(k)), r['route'])
+        out.append(SHORT.get(key, r['route']))
+    return ', '.join(out[:-1]) + ' and ' + out[-1] if len(out) > 1 else ''.join(out)
+
+
+def answer(routes):
+    by = {lvl: [r for r in routes if r['feasibility'] == lvl] for lvl in ('Confirmed', 'Feasible with assumptions', 'Needs confirmation', 'Not yet concluded')}
+    parts = [f'<b>The Horus Software API has a documented endpoint for the core object of every Chift route in scope, so the documentation rules out none of the {len(routes)} routes.</b> '
+             'That is not the same as every route being settled. ']
+    if by['Confirmed']:
+        parts.append(f'{len(by["Confirmed"])} routes are confirmed by the documentation ({_names(by["Confirmed"])}). ')
+    if by['Feasible with assumptions']:
+        parts.append(f'{len(by["Feasible with assumptions"])} are feasible but rely on assumptions the documentation does not confirm ({_names(by["Feasible with assumptions"])}). ')
+    if by['Needs confirmation']:
+        parts.append(f'{len(by["Needs confirmation"])} need answers from Horus or decisions from Chift before their design is final ({_names(by["Needs confirmation"])}); '
+                     'these carry most of the business value and most of the effort. ')
+    if by['Not yet concluded']:
+        parts.append(f'{len(by["Not yet concluded"])} cannot be concluded yet ({_names(by["Not yet concluded"])}). ')
+    parts.append('Behaviour on large folders cannot be concluded from the documentation for any list route.')
+    return ''.join(parts)
 TILE_NOTE = ('Each route is rated by the weakest point that materially affects it. "Confirmed" means the documentation shows Horus can do what the route needs; '
              'the remaining work is mapping. The other levels are explained in section 3.')
-KEY_MESSAGES = []
-RECOMMENDATION = ''
+KEY_MESSAGES = [
+    '<b>One Chift call often means several Horus calls.</b> Horus needs its own references (journal, partner, account and analytic codes), and a create returns only an id. '
+    'The connector therefore looks up reference data, cached per folder, and reads records back. Horus has no endpoint that lists invoices, so invoice retrieval is rebuilt from ledger data.',
+    '<b>VAT is the main mapping gap.</b> Horus accepts no VAT code, only a combination of rate, origin and type (plus kind and condition for purchases), from lists Horus publishes per country and direction. '
+    'Chift\u2019s <code>tax_code</code> needs a translation table: a proposal Chift must accept and Horus must confirm.',
+    '<b>Some Chift data has no place in Horus.</b> Examples: line quantity and unit price, several addresses, person names, withholding tax, payment terms, and the account type. '
+    'Chift must decide whether such inputs are rejected or dropped, and its clients need to know.',
+    '<b>Accountant review is built into Horus.</b> Entries pushed through the API are unconfirmed by default, and invoices cannot be deleted through the API. '
+    'Whether Chift\u2019s "posted" should bypass that review is a Chift decision. Proposal: review by default.',
+    '<b>Two read-side points rest on undocumented behaviour:</b> telling invoices from credit notes when reading entries, and computing supplier open amounts when invoices are partly paid. '
+    'Both need confirmation from Horus.',
+]
+RECOMMENDATION = ('Proceed to a short validation phase rather than a full build. First get a test licence and answers to the "before build" questions in section 6. '
+                  'Then build the reference routes and the simple creates, followed by invoice creation and miscellaneous operations. Leave the ledger-based reads '
+                  '(invoice retrieval, outstanding items) until Horus has confirmed credit notes, currency, partial matching and volumes. '
+                  'This is a proposal for Chift\u2019s decision, not a commitment on behalf of Chift or Horus.')
 
 # ---------- 2. Differences ----------
 DIFF_INTRO = ('Chift exposes one standard accounting model; Horus has its own vocabulary and rules. The connector sits in between: it translates each Chift '
@@ -50,7 +94,8 @@ ROUTES_INTRO = ('This table answers Task A: for each Chift route, the Horus endp
 FZ_LEGEND = ('<b>Confirmed</b>: the documentation shows Horus can serve the route; remaining work is mapping. '
              '<b>Feasible with assumptions</b>: the route can be built, but part of the Chift contract rests on an interpretation the documentation does not confirm. '
              '<b>Needs confirmation</b>: a point that affects correctness needs an answer from Horus or a decision from Chift before the design is final. '
-             '<b>Not yet concluded</b>: the documentation does not allow a conclusion.')
+             '<b>Not yet concluded</b>: the documentation does not allow a conclusion. '
+             '"Confirmed" does not mean complete: documented limitations still apply, for example a ledger account\u2019s type cannot be written.')
 
 # ---------- 4. Task B ----------
 TASKB_ORDER = [
@@ -93,9 +138,16 @@ LIMITS_INTRO = ('The limitations and design considerations that materially affec
 # ---------- 6. Questions and next steps ----------
 QUESTIONS_INTRO = ('The questions whose answers change feasibility, the design of a Task B mapping, or what Chift can promise its clients. '
                    '"Before build" questions should be answered before development starts.')
-QUESTIONS_NOTE = ('Ref. points to the question number in the detailed reference where one exists; "New" marks questions added after the review. '
-                  'The detailed reference and its route cards hold further detail-level questions.')
-NEXT_STEPS = []
+QUESTIONS_NOTE = ('Question ids match the detailed reference, where the same topics are covered (wording refined since). "new" marks questions added after the '
+                  'critical review. The route cards of the detailed reference hold further detail-level questions.')
+NEXT_STEPS = [
+    'Send the "before build" questions to Horus, and ask for a test licence and the integration registration details.',
+    'Settle with Chift the decisions it owns: posting mode, invoice numbering, the VAT-code convention, and how unsupported inputs are handled.',
+    'Prototype on a test folder: reference reads, then client and ledger-account creation; measure response times on the largest test folder.',
+    'Add invoice creation and miscellaneous operations, testing the VAT translation, numbering, duplicates and timeouts.',
+    'Add invoice retrieval and outstanding items once Horus has answered on credit notes, currency, partial matching and limits.',
+    'Use the Task B tables as acceptance criteria, and update the detailed reference with every confirmed answer.',
+]
 
 # ---------- Appendices ----------
 SOURCES_HTML = f'''<h4>Sources</h4>
