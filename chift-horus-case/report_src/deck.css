@@ -29,7 +29,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 .frame { position: absolute; inset: 0; display: none; }
 .frame.active { display: block; }
 .slide { width: 1280px; height: 720px; background: var(--slide); position: relative; overflow: hidden; border-radius: 10px;
-         box-shadow: 0 1px 2px rgba(19, 26, 46, 0.06), 0 12px 32px rgba(19, 26, 46, 0.10); display: flex; flex-direction: column; padding: 52px 72px 40px; }
+         box-shadow: 0 1px 2px rgba(19, 26, 46, 0.06), 0 12px 32px rgba(19, 26, 46, 0.10); display: flex; flex-direction: column; padding: 44px 72px 44px; }
 .slide::before { content: ""; position: absolute; left: 0; top: 0; width: 8px; height: 100%; background: var(--accent); }
 .slide.appendix::before { background: var(--line-strong); }
 
@@ -63,11 +63,11 @@ body.overview .frame:focus-visible { outline-color: var(--accent); }
 body.overview .notes-panel { display: none; }
 
 /* ---------- slide typography ---------- */
-.kicker { font: 700 14px/1 var(--font-sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+.kicker { font: 700 13px/1 var(--font-sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
 .appendix .kicker { color: var(--muted); }
-.slide h1 { font-size: 38px; line-height: 1.15; font-weight: 700; letter-spacing: -0.01em; margin: 0; text-wrap: balance; max-width: 1080px; }
-.lead { font-size: 21px; line-height: 1.45; color: var(--muted); margin: 14px 0 0; max-width: 1040px; }
-.body { flex: 1; min-height: 0; margin-top: 26px; display: flex; flex-direction: column; gap: 18px; }
+.slide h1 { font-size: 34px; line-height: 1.15; font-weight: 700; letter-spacing: -0.01em; margin: 0; text-wrap: balance; max-width: 1080px; }
+.lead { font-size: 19px; line-height: 1.45; color: var(--muted); margin: 10px 0 0; max-width: 1080px; }
+.body { flex: 1; min-height: 0; margin-top: 22px; display: flex; flex-direction: column; gap: 16px; }
 .foot { position: absolute; left: 72px; right: 48px; bottom: 16px; display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
 .foot .n { font-variant-numeric: tabular-nums; }
 ul.b { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
@@ -105,7 +105,11 @@ code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
 
 .cards { display: grid; gap: 16px; flex: 1; min-height: 0; align-content: start; }
 .cards.n4 { grid-template-columns: repeat(2, 1fr); }
-.cards.n5 { grid-template-columns: repeat(6, 1fr); }
+.cards.n5 { grid-template-columns: repeat(6, 1fr); gap: 12px; }
+.cards.n5 .card { padding: 12px 14px; }
+.cards.n5 .card h3 { font-size: 16px; }
+.cards.n5 .card ul.b { gap: 6px; }
+.cards.n5 .card ul.b li { font-size: 14px; }
 .cards.n5 .card { grid-column: span 2; }
 .cards.n5 .card:nth-child(4) { grid-column: 2 / span 2; }
 .cards.n3 { grid-template-columns: repeat(3, 1fr); }
@@ -137,9 +141,9 @@ table.t td.eps { font-family: var(--font-mono); font-size: 13px; font-weight: 40
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .stat { border-radius: 12px; padding: 20px 22px; background: var(--surface-2); border-top: 6px solid var(--line-strong); }
 .stat.ok { border-top-color: var(--ok); } .stat.ass { border-top-color: var(--warn); } .stat.conf { border-top-color: var(--bad); }
-.stat .n { font-size: 64px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat .n { font-size: 56px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; }
 .stat .l { font-size: 18px; font-weight: 700; margin: 8px 0 8px; }
-.stat .r { font-size: 15px; color: var(--muted); line-height: 1.4; }
+.stat .r { font-size: 14.5px; color: var(--muted); line-height: 1.4; }
 
 /* chart slide */
 .chart { display: grid; gap: 18px; }
@@ -172,13 +176,14 @@ table.t td.eps { font-family: var(--font-mono); font-size: 13px; font-weight: 40
 .phase::before { content: ""; position: absolute; top: -19px; left: 16px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--slide); }
 .phase.gate::before { background: var(--warn); }
 .phase h3 { font-size: 17px; margin: 0 0 8px; }
-.phase ul.b li { font-size: 15px; }
+.phase ul.b li { font-size: 14.5px; }
+.phase ul.b { gap: 6px; }
 
 /* title & closing */
-.slide.title { justify-content: center; padding-left: 96px; }
-.slide.title .kicker { font-size: 16px; }
-.slide.title h1 { font-size: 56px; max-width: 980px; }
-.slide.title .lead { font-size: 24px; max-width: 900px; }
+.slide.lay-title { justify-content: center; padding-left: 96px; }
+.slide.lay-title .kicker { font-size: 16px; }
+.slide.lay-title h1 { font-size: 56px; max-width: 980px; }
+.slide.lay-title .lead { font-size: 24px; max-width: 900px; }
 .meta { display: flex; gap: 28px; margin-top: 40px; font-size: 16px; color: var(--muted); flex-wrap: wrap; }
 .meta b { color: var(--ink); font-weight: 600; }
 .big-q { font-size: 44px; font-weight: 700; margin: 6px 0 0; }
@@ -193,3 +198,41 @@ table.t td.eps { font-family: var(--font-mono); font-size: 13px; font-weight: 40
   .frame { display: block !important; position: relative; inset: auto; width: 1280px; height: 720px; page-break-after: always; break-after: page; }
   .slide { box-shadow: none; border-radius: 0; transform: none !important; }
 }
+
+/* route table (slide 7) */
+table.t.routes { font-size: 14px; }
+table.t.routes td { padding: 5px 10px 5px 0; vertical-align: middle; }
+table.t.routes td.eps { font-size: 12.5px; }
+table.t.routes .fz { font-size: 12px; padding: 4px 8px; }
+/* task B two-column layout */
+.tb2 { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 26px; flex: 1; min-height: 0; }
+.tb2 .right { display: grid; gap: 14px; align-content: start; }
+.vflow li { font-size: 14px; padding: 7px 10px 7px 42px; }
+.vflow li span { display: block; color: var(--muted); }
+.vflow li span + span { margin-top: 1px; }
+.tb2 table.t.compact { font-size: 13.5px; }
+.tb2 .panel { padding: 14px 16px; }
+.tb2 .panel h3 { font-size: 16px; margin-bottom: 8px; }
+.tb2 .panel ul.b.sm li { font-size: 14.5px; }
+/* VAT slide */
+.vat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+.vat-grid .panel { padding: 12px 14px; }
+.vat-grid .panel h3 { font-size: 15.5px; margin-bottom: 6px; }
+.vat-grid ul.b.sm li { font-size: 14px; }
+
+/* stat slide spacing */
+.lay-stat .body { justify-content: center; gap: 26px; }
+.lay-stat .callout { margin-top: 0; }
+.lay-stat .stat { padding: 24px 24px 26px; }
+.lay-stat .stat .r { font-size: 16px; }
+/* task B: horizontal steps on top, key points + examples below */
+.hsteps { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; counter-reset: h; }
+.hsteps li { position: relative; background: var(--surface-2); border-radius: 8px; padding: 9px 10px 9px 40px; font-size: 13.5px; line-height: 1.35; min-width: 0; }
+.hsteps li::before { counter-increment: h; content: counter(h); position: absolute; left: 10px; top: 9px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font: 700 12px/22px var(--font-sans); text-align: center; }
+.hsteps li b { display: block; font-size: 14px; margin-bottom: 2px; }
+.hsteps li span { display: block; color: var(--muted); }
+.tb3 { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 22px; align-items: start; }
+.tb3 .panel { padding: 14px 16px; }
+.tb3 .panel h3 { font-size: 16px; margin-bottom: 8px; }
+.tb3 .panel ul.b.sm li { font-size: 14.5px; }
+.tb3 table.t.compact { font-size: 13.5px; }

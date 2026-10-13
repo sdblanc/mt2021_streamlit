@@ -1,0 +1,1403 @@
+{
+ "slides": [
+  {
+   "id": "1",
+   "title": "Horus connector assessment",
+   "kicker": "Chift product/tech case · Part 1 · Mapping Chift – Horus",
+   "lead": "Can Chift's accounting routes be served from the Horus Software API, and what must be confirmed before building?",
+   "blocks": [
+    {
+     "heading": "About this deck",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Prepared by Silas Deblanc for Chift, Product & Tech"
+      },
+      {
+       "tag": "",
+       "text": "13 October 2026 · Status: for discussion"
+      },
+      {
+       "tag": "",
+       "text": "Basis: desk analysis of the documentation, no live API calls"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Proposals are analysis, not commitments on behalf of Chift or Horus.",
+   "notes": "Thanks for having me. In about twenty minutes I'll cover four things. First, the answer: what the documentation confirms and what it doesn't. Second, how Horus differs from Chift, because most of the work comes from those differences. Third, Task A, the route mapping, and Task B, the attribute mapping for client creation, invoice creation and outstanding items. Finally, what your clients would notice, the decisions that are yours, the questions for Horus, and my recommendation. This is a desk analysis: no live API calls were sent, and anything I call a proposal is mine to discuss, not an agreed rule. Questions are welcome at the end."
+  },
+  {
+   "id": "2",
+   "title": "The case asked for route and attribute mappings, explained for clients",
+   "kicker": "Approach",
+   "lead": "Two levels of mapping, built with the same method for every route.",
+   "blocks": [
+    {
+     "heading": "What the case asked",
+     "tag": "",
+     "items": [
+      {
+       "tag": "Task A",
+       "text": "Horus endpoints and specificities for 10 Chift routes"
+      },
+      {
+       "tag": "Task B",
+       "text": "Every attribute and query parameter of 3 routes"
+      },
+      {
+       "tag": "Hint",
+       "text": "One Chift route may need several Horus endpoints"
+      },
+      {
+       "tag": "",
+       "text": "Explain the result so Chift's clients can follow it, in plain language"
+      }
+     ]
+    },
+    {
+     "heading": "Method, the same for every route",
+     "tag": "",
+     "items": [
+      {
+       "tag": "1",
+       "text": "Read both contracts in full for the routes in scope"
+      },
+      {
+       "tag": "2",
+       "text": "Align vocabulary: each Chift term and its Horus equivalent"
+      },
+      {
+       "tag": "3",
+       "text": "Ask the same questions per route: object, calls, fields, what is lost"
+      },
+      {
+       "tag": "4",
+       "text": "Label every claim: Documented, Derived, Assumption, To confirm"
+      },
+      {
+       "tag": "5",
+       "text": "Check each mapping against the docs, then challenge it in a critical review"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Sources: the case, Chift OpenAPI spec (SDK 0.6.16), Horus reference (72 pages) and 15 guides, two VAT spreadsheets · desk analysis, no live API calls",
+   "notes": "The case asked two things. Task A: for ten Chift routes, which Horus endpoints to use and what to watch. Task B: for three routes, client creation, invoice creation and outstanding items, every attribute and query parameter. It also hinted that one Chift route may need several Horus calls, and that turned out to be central. My method was the same for every route: read both contracts, align the vocabulary, ask the same questions, label every claim by its evidence, then challenge the result in a critical review. That review changed some conclusions; appendix B lists them. Likely question: why not test the API? There was no test licence, and Horus requests run on real data."
+  },
+  {
+   "id": "3",
+   "title": "Nothing is ruled out, but only one route is fully confirmed",
+   "kicker": "Executive summary",
+   "lead": "The documentation rules out none of the 11 routes, but most still rest on assumptions or open answers. Proposal: a short validation phase first, not a full build.",
+   "blocks": [],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Not concluded for any list route: behaviour on large folders (no documented limits, no volume test run).",
+   "notes": "Here's the short answer. Horus has a documented endpoint for the core object of every route, so the documentation rules nothing out. But that isn't the same as everything being settled. Only analytic accounts is fully confirmed. Six routes are feasible but rest on assumptions the docs don't confirm. Four need answers from Horus or decisions from Chift; they are likely your clients' highest-value routes, which I'd confirm with you. For every list route, I can't conclude how it behaves on large folders. Hence my proposal: a short validation phase, not a full build. Likely question: 'So is it feasible?' Nothing is blocked, but four designs aren't final yet."
+  },
+  {
+   "id": "4",
+   "title": "Core capabilities are documented; VAT, read rules and volumes are not",
+   "kicker": "Executive summary · Evidence",
+   "lead": "Every claim is sorted by its evidence: stated in the documentation, assumed, owned by someone to answer, or not yet decidable.",
+   "blocks": [
+    {
+     "heading": "What the documentation confirms",
+     "tag": "Documented",
+     "items": [
+      {
+       "tag": "F",
+       "text": "Every route has documented Horus endpoints for its core object"
+      },
+      {
+       "tag": "F",
+       "text": "Invoices and credit notes post natively, with VAT, analytics and PDF in one call"
+      },
+      {
+       "tag": "F",
+       "text": "Client open items are native, with open amount and payment status"
+      }
+     ]
+    },
+    {
+     "heading": "What depends on an assumption",
+     "tag": "Assumption",
+     "items": [
+      {
+       "tag": "D",
+       "text": "Lists return complete results, so paging can be emulated"
+      },
+      {
+       "tag": "A",
+       "text": "VAT spreadsheets are current, and the API accepts the Luxembourg origins"
+      },
+      {
+       "tag": "A",
+       "text": "Invoice or credit note on read follows the daybook type (proposed rule)"
+      }
+     ]
+    },
+    {
+     "heading": "What needs confirmation",
+     "tag": "To confirm",
+     "items": [
+      {
+       "tag": "H1, H2, H3",
+       "text": "Horus, VAT and posting: tax files, credit notes, numbering"
+      },
+      {
+       "tag": "H4, H5, H8",
+       "text": "Horus, reads: ledger currency, limits, partial matching"
+      },
+      {
+       "tag": "C1, C7, C14, C15",
+       "text": "Chift: posting mode, unnumbered invoices, caching, currency conversion"
+      }
+     ]
+    },
+    {
+     "heading": "What cannot be concluded yet",
+     "tag": "Not concluded",
+     "items": [
+      {
+       "tag": "?",
+       "text": "Performance and completeness of list routes on large folders"
+      },
+      {
+       "tag": "?",
+       "text": "Supplier open items for partly paid invoices (depends on H8)"
+      },
+      {
+       "tag": "?",
+       "text": "Whether every VAT case can be expressed, e.g. non-VAT-liable folders"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Also before build: Horus registration, test licence, API addresses, confirmation rights, documentation version (H19, H17, H24, H21, H20).",
+   "notes": "This slide sorts the evidence into four levels. First, what the documentation states: endpoints for every route, native invoice posting, native client open items. Second, what rests on my assumptions; for example, that lists return complete results, which I deduced from the absence of paging parameters. Third, questions with an owner: Horus on VAT, credit notes, numbering, currency, limits and partial matching; Chift on posting mode, numbering, caching and currency conversion. Horus access, such as registration and a test licence, is also before build. Last, what I can't conclude yet. Incremental sync and the apiary documentation the case links are also open. Likely question: 'What's riskiest?' VAT, and the supplier side of outstanding items."
+  },
+  {
+   "id": "5",
+   "title": "One Chift call often means several Horus calls",
+   "kicker": "How Horus differs · Worked example: invoice creation",
+   "lead": "Horus needs its own references first, and a create returns only an id, so the connector looks up, checks, posts and reads back.",
+   "blocks": [
+    {
+     "heading": "Look up references, cached per folder",
+     "tag": "Cached",
+     "items": [
+      {
+       "tag": "",
+       "text": "Why: Horus posts by its own codes; folder legislation selects the VAT list"
+      }
+     ]
+    },
+    {
+     "heading": "Check the partner's folder and role",
+     "tag": "Proposal",
+     "items": [
+      {
+       "tag": "",
+       "text": "Why: Horus needs a valid CompanyId before it accepts an invoice"
+      }
+     ]
+    },
+    {
+     "heading": "Check the number for duplicates",
+     "tag": "Proposal · best effort",
+     "items": [
+      {
+       "tag": "",
+       "text": "Why: no idempotency key, and invoices cannot be deleted through the API"
+      }
+     ]
+    },
+    {
+     "heading": "Post to the sales or purchase endpoint, PDF included",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Why: one native call per invoice or credit note; Horus returns only an id"
+      }
+     ]
+    },
+    {
+     "heading": "Read the entry back",
+     "tag": "Skipped if ignore_accounting_id",
+     "items": [
+      {
+       "tag": "",
+       "text": "Why: stored number, status and update date come only from Horus"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Same pattern on reads: no endpoint lists all invoices, so invoice retrieval is rebuilt from ledger data.",
+   "notes": "This is the pattern behind most routes, shown on invoice creation. Chift sends one request. Before posting, the connector needs Horus's own references: the daybook, the accounts, the analytic codes, and the folder's legislation, which selects the VAT list. Those are cached per folder, but fiscal years are read fresh, because the accountant can close a period at any time. Then it checks the partner and, as a best-effort proposal, whether the number already exists. The create returns only an id, so we read the entry back. Likely question: 'Why so many calls?' Most are cached reference data, and a wrong invoice can't be deleted through the API, so checking first is cheaper."
+  },
+  {
+   "id": "6",
+   "title": "Similar words mean different things in Chift and Horus",
+   "kicker": "How Horus differs",
+   "lead": "Horus has its own vocabulary and rules; most effort and risk come from these differences, not from missing objects.",
+   "blocks": [],
+   "table": {
+    "headers": [
+     "Chift concept",
+     "Horus concept",
+     "What it means for the mapping"
+    ],
+    "rows": [
+     [
+      "Folder",
+      "Folder: one entity's books; most calls take a FolderId",
+      "Direct; one grant appears to cover all user folders: enforce selection (C12)"
+     ],
+     [
+      "Client / supplier",
+      "One 'company' record, flagged customer and/or supplier",
+      "Search key must be generated; force_merge flags an existing supplier as customer"
+     ],
+     [
+      "Journal",
+      "Daybook; its type decides which endpoint can post into it",
+      "Daybook type is the routing key for every write route"
+     ],
+     [
+      "Ledger account",
+      "Account, referenced by its search key (usually the number)",
+      "No account type: Chift's type is lost on create, computed on read"
+     ],
+     [
+      "Analytic plan / account",
+      "Cost schema / cost section (at most 8 schemas per folder)",
+      "Percentages become amounts on combinations; Free-type dimensions hidden (Proposal, C9)"
+     ],
+     [
+      "Sale or purchase entry",
+      "Book entry (Type 0 invoice, 1 credit note)",
+      "On read, entries do not say invoice or credit note (H2)"
+     ],
+     [
+      "VAT code",
+      "No VAT-code entity: a combination of rate, origin and type",
+      "Needs a translation table (Proposal: connector-built list, C2)"
+     ],
+     [
+      "Posted / draft",
+      "Confirmed true / false",
+      "API entries unconfirmed by default; the pairing is a proposal (C1)"
+     ]
+    ]
+   },
+   "callout": "In Horus, a 'company' is a customer or supplier inside a folder, never the folder's own company.",
+   "notes": "Most mapping mistakes come from words that look alike. In Horus, a 'company' is a third party the folder deals with, a customer or supplier, not the folder's own company. One record can be both, which is why Chift's force_merge fits well. A journal is a daybook, and its type decides which endpoint can post into it. Analytic plans are cost schemas, and Horus stores amounts on combinations, not percentages. There is no VAT-code entity at all. And pairing 'posted' with 'confirmed' is my proposal, not something the documentation states. Likely question: 'Why not map posted to confirmed directly?' Horus keeps API entries unconfirmed for the accountant's review; that's Chift's call, C1."
+  },
+  {
+   "id": "7",
+   "title": "Each route has a main Horus endpoint plus supporting calls",
+   "kicker": "Task A · Route mapping",
+   "lead": "For each Chift route: the main Horus endpoint(s), plus supporting endpoints for reference data, checks and read-backs.",
+   "blocks": [],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "'+ N' counts supporting endpoints, not calls per request · filtered reads (.list) use POST, reads by id (.info) use GET.",
+   "notes": "This table answers Task A. For each route: the main Horus endpoint, and a '+ N' count of supporting endpoints for reference data, checks and read-backs. That count is endpoints, not calls per request. One practical detail: Horus filtered lists use POST with the filters in the body; simple reads by id use GET. The last column rates feasibility by evidence, using the weakest point that materially affects the route. The full details per route, what is confirmed, assumed and open, are in section 3 of the report. Likely question: 'Which route is simplest?' Analytic accounts: one documented loop over at most eight plans, and the only route the documentation fully confirms."
+  },
+  {
+   "id": "8",
+   "title": "Reference routes need only small adaptations",
+   "kicker": "Task A · Reference routes",
+   "lead": "Five rest on an interpretation of undocumented Horus data; analytic accounts is the one route the documentation confirms.",
+   "blocks": [
+    {
+     "heading": "Reads: journals, chart of accounts, folders",
+     "tag": "",
+     "items": [
+      {
+       "tag": "Feasible with assumptions",
+       "text": "Journals: one call lists every daybook; blocked and currency flags rest on assumptions (H14)"
+      },
+      {
+       "tag": "Feasible with assumptions",
+       "text": "Chart of accounts: number, name, status native; account type is a computed estimate (H12)"
+      },
+      {
+       "tag": "Feasible with assumptions",
+       "text": "Folders: id, name, VAT number, address native; currency (EUR) and active status assumed"
+      }
+     ]
+    },
+    {
+     "heading": "Ledger accounts and analytics",
+     "tag": "",
+     "items": [
+      {
+       "tag": "Feasible with assumptions",
+       "text": "Ledger account creation: number and name documented end to end; the type cannot be written"
+      },
+      {
+       "tag": "Feasible with assumptions",
+       "text": "Analytic plans: one call; parent_id rests on undocumented MasterCostSchema; Free-type hidden (Proposal, C9)"
+      },
+      {
+       "tag": "Confirmed",
+       "text": "Analytic accounts: documented loop over up to eight plans; no stored balances (C4)"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Build effort (analyst's estimate): low for journals, folders, analytic plans and accounts; medium for chart and ledger accounts.",
+   "notes": "These six routes are the reference data most other routes depend on, and they need only small adaptations; most are a single Horus call, cached per folder. The ratings are by evidence, not effort. Five are 'feasible with assumptions' because part of the response rests on an interpretation of undocumented Horus data, such as the account type, the folder currency, or the parent of an analytic plan. Analytic accounts is confirmed; Horus simply stores no balances, and how to show them is a Chift question, C4. Effort is my estimate, to calibrate with you. Likely question: 'Why isn't the chart of accounts confirmed?' Horus has no account type, so the Chift type is computed from several sources."
+  },
+  {
+   "id": "9",
+   "title": "Four routes carry the effort and the open questions",
+   "kicker": "Task A · The hard routes",
+   "lead": "All four need Horus answers or Chift decisions before their design is final; likely the highest-value routes (to confirm with Chift).",
+   "blocks": [
+    {
+     "heading": "Invoice creation",
+     "tag": "Effort: high",
+     "items": [
+      {
+       "tag": "",
+       "text": "No VAT code in Horus: each tax_code must become an accepted combination"
+      },
+      {
+       "tag": "",
+       "text": "Numbers must be numeric; entries unconfirmed by default; no invoice delete via API"
+      },
+      {
+       "tag": "Waits on",
+       "text": "H1 VAT files · H3 numbering · C1 posting mode · C7 unnumbered invoices"
+      }
+     ]
+    },
+    {
+     "heading": "Invoice retrieval",
+     "tag": "Effort: high",
+     "items": [
+      {
+       "tag": "",
+       "text": "No endpoint lists all invoices: rebuilt from entry headers and ledger lines"
+      },
+      {
+       "tag": "",
+       "text": "Entries do not say invoice or credit note; ledger currency undocumented"
+      },
+      {
+       "tag": "Waits on",
+       "text": "H2 credit notes · H4 currency · H5 limits and large folders"
+      }
+     ]
+    },
+    {
+     "heading": "Miscellaneous operations",
+     "tag": "Effort: medium",
+     "items": [
+      {
+       "tag": "",
+       "text": "No currency field: foreign amounts converted to EUR (Proposal; who converts, C15)"
+      },
+      {
+       "tag": "",
+       "text": "Review or posted status, and numeric entry numbers, need Chift decisions"
+      },
+      {
+       "tag": "Waits on",
+       "text": "C1 posting mode · H21 confirmation rights · C15 conversion · C7 numbering"
+      }
+     ]
+    },
+    {
+     "heading": "Outstanding items",
+     "tag": "Effort: high",
+     "items": [
+      {
+       "tag": "",
+       "text": "Clients get a native open amount; supplier amounts are computed from ledger lines"
+      },
+      {
+       "tag": "",
+       "text": "No paging or date filter: every request reads all open items"
+      },
+      {
+       "tag": "Waits on",
+       "text": "H8 partial matching · H5 volumes · H4 currency · C5 signs"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Proposal: build invoice creation and operations after the reference routes; ledger-based reads wait for Horus's answers.",
+   "notes": "These four routes carry most of the effort and most of the open questions, and they're likely the ones your clients care about most, which I'd confirm with you. Invoice creation is native in Horus, but VAT, numbering and posting status need answers first. Invoice retrieval is the most complex read: no endpoint lists all invoices, so we rebuild them from the ledger, and telling invoices from credit notes rests on my assumption. Miscellaneous operations have no currency field, so who converts is your decision, C15. For outstanding items, the supplier side depends on how Horus returns partially matched lines, H8. Likely question: 'Which first?' Invoice creation and operations; ledger-based reads after Horus answers."
+  },
+  {
+   "id": "10",
+   "title": "Most attributes map directly or with a transform",
+   "kicker": "Task B · Attribute mapping",
+   "lead": "The effort sits in lookups such as the VAT code, values the connector generates such as the client search key, and fields Horus cannot store.",
+   "blocks": [],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "'Not available' is not blocked: Chift decides whether such inputs are rejected or dropped (C3).",
+   "notes": "Task B goes down to every attribute and query parameter of three routes: client creation, invoice creation and outstanding items. Each bar shows how the rows split by mapping type. Most rows map directly or with a transform, meaning a format, code, sign or unit change. The effort sits in lookups, such as turning a Chift tax code into a Horus VAT combination; in values the connector must generate, such as the client search key, which is always a proposal; and in fields Horus can't store, like line quantity or extra addresses. 'Not available' doesn't mean blocked: Chift decides whether to reject or drop that input, C3. The next slides walk through each route."
+  },
+  {
+   "id": "11",
+   "kicker": "Task B · Client creation",
+   "title": "Client creation maps well; the client code must be generated",
+   "lead": "A Chift client becomes a Horus company created with companies.new. Horus returns only an id, so the response is built from a read-back.",
+   "blocks": [
+    {
+     "heading": "1 · Check references and duplicates",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Cached: folder defaults, receivable account, country code"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Search by VAT number and external reference first"
+      },
+      {
+       "tag": "",
+       "text": "Check the generated search key is free in the folder"
+      }
+     ]
+    },
+    {
+     "heading": "2 · Create the company",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "companies.new: search key, role flags, one address, IBANs"
+      },
+      {
+       "tag": "",
+       "text": "Returns only the new id"
+      },
+      {
+       "tag": "",
+       "text": "force_merge: the existing supplier is flagged as customer instead"
+      }
+     ]
+    },
+    {
+     "heading": "3 · Read back",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "companies.info, ibans.list and the receivable account"
+      },
+      {
+       "tag": "",
+       "text": "Two to three extra calls; about three to seven in total"
+      }
+     ]
+    },
+    {
+     "heading": "4 · Build the Chift response",
+     "tag": "",
+     "items": [
+      {
+       "tag": "Proposal",
+       "text": "One 'main' address, is_company true, null where Horus stores nothing"
+      }
+     ]
+    },
+    {
+     "heading": "Key points",
+     "tag": "",
+     "items": [
+      {
+       "tag": "Documented",
+       "text": "One record holds both roles, so force_merge maps cleanly"
+      },
+      {
+       "tag": "Assumption",
+       "text": "Search key = the code accountants see. Proposal: derive from the name (C8, H7)"
+      },
+      {
+       "tag": "Derived",
+       "text": "Extra addresses, mobile, notes and person fields are lost; reject or drop is C3"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [
+     "Chift attribute",
+     "Horus",
+     "Mapping",
+     "What happens"
+    ],
+    "rows": [
+     [
+      "name",
+      "Name (required)",
+      "Direct",
+      "Same meaning; also the basis for the generated search key"
+     ],
+     [
+      "addresses",
+      "One flat address (Address, ZipCode, Locality, CountryCode)",
+      "Transform",
+      "One address kept: main, else invoice, else delivery (proposal, C3)"
+     ],
+     [
+      "— (not sent by Chift)",
+      "SearchKey (required)",
+      "Generated",
+      "Proposal: built from the name, numeric suffix if taken (C8, H7)"
+     ],
+     [
+      "is_company",
+      "—",
+      "Not available",
+      "No company/individual flag: individuals come back as companies"
+     ]
+    ]
+   },
+   "callout": "Writes go to real data, and the API has no call to delete a company (test folder: H17)",
+   "notes": "For client creation, the key idea is that Horus keeps one record per third party, the 'company', flagged as customer and/or supplier. So a Chift client becomes a company flagged as customer, and force_merge adds that flag to an existing supplier. The flow is check, create, read back, build, because Horus returns only an id. The real business choice is the search key: Horus requires it, Chift never sends it, and accountants see it as the client's code. My proposal is to derive it from the name, but Chift should agree the convention. Likely question: what if a client is sent twice? Without a VAT number or external reference, there is no reliable duplicate check."
+  },
+  {
+   "id": "12",
+   "kicker": "Task B · Invoice creation",
+   "title": "Invoice creation is native; VAT, numbering and status need decisions",
+   "lead": "Sale and purchase entries go to invoices.sales.new or invoices.purchases.new, PDF included. The work is in references, VAT, analytics and unstorable fields.",
+   "blocks": [
+    {
+     "heading": "1 · Resolve references",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Cached: daybook, accounts, analytic codes, folder legislation for the VAT list"
+      },
+      {
+       "tag": "",
+       "text": "Fiscal years read fresh: the accountant can close a period anytime"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Partner checked in the folder; found or created from partner_info"
+      }
+     ]
+    },
+    {
+     "heading": "2 · Check for duplicates",
+     "tag": "",
+     "items": [
+      {
+       "tag": "Proposal",
+       "text": "Search entries by document number, before create and any retry"
+      },
+      {
+       "tag": "",
+       "text": "Best effort: no idempotency key, no invoice delete"
+      }
+     ]
+    },
+    {
+     "heading": "3 · Create",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Sales or purchase endpoint; Type 0 invoice, Type 1 credit note"
+      },
+      {
+       "tag": "",
+       "text": "PDF in the same call; Horus returns only the entry id"
+      }
+     ]
+    },
+    {
+     "heading": "4 · Read back",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "book-entries.info: stored number, status, last update"
+      },
+      {
+       "tag": "",
+       "text": "Skipped when ignore_accounting_id=true"
+      }
+     ]
+    },
+    {
+     "heading": "Key points",
+     "tag": "",
+     "items": [
+      {
+       "tag": "Assumption",
+       "text": "VAT is the main gap: Horus takes combinations, not codes (H1, C2)"
+      },
+      {
+       "tag": "Assumption",
+       "text": "Proposal: review mode by default; Number 0, returned as draft, when unnumbered (C1, C7)"
+      },
+      {
+       "tag": "Derived",
+       "text": "No undo: no invoice delete, and an update creates a new id"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [
+     "Chift attribute",
+     "Horus",
+     "Mapping",
+     "What happens"
+    ],
+    "rows": [
+     [
+      "lines[].account_number",
+      "InvoiceLines[].Account",
+      "Direct",
+      "Horus posts on the account number; proposal: check it in the cached chart"
+     ],
+     [
+      "lines[].tax_code",
+      "TaxRate, TaxOrigin, TaxType (+ purchase fields)",
+      "Lookup",
+      "Proposal: decoded via a connector VAT-code list; unknown codes rejected"
+     ],
+     [
+      "analytic_accounts[].percentage",
+      "CostLines[].Amount",
+      "Transform",
+      "Line base × percentage, rounded so cost lines sum to the base"
+     ],
+     [
+      "lines[].quantity",
+      "—",
+      "Not available",
+      "Not stored in Horus; reads back as 1"
+     ]
+    ]
+   },
+   "callout": "The create response has no warnings field, so rejecting or dropping unstorable inputs is a Chift decision (C3)",
+   "notes": "Invoice creation is native in Horus: one endpoint for sales, one for purchases, invoices and credit notes, with the PDF in the same call. The work is resolving references, translating VAT, turning analytic percentages into amounts, and handling fields Horus cannot store. Two details in the table: the account number is Direct, not Lookup, because Horus posts on the account number itself. tax_code is a Lookup: the connector decodes it into a Horus combination, which is the next slide. Likely question: why so many calls? A wrong invoice cannot be deleted through the API, so the connector checks references, the closed period and the number first. Most of that is cached reference data."
+  },
+  {
+   "id": "13",
+   "kicker": "Task B · VAT",
+   "title": "VAT needs a translation table from Chift codes to Horus combinations",
+   "lead": "Horus has no VAT-code list and accepts no VAT code on write. Each line carries a combination, valid only if Horus publishes it.",
+   "blocks": [
+    {
+     "heading": "What Horus requires",
+     "tag": "Documented",
+     "items": [
+      {
+       "tag": "",
+       "text": "Rate, origin and type per line; plus kind and condition on purchases"
+      },
+      {
+       "tag": "",
+       "text": "Only combinations listed in two spreadsheets, per legislation and direction"
+      },
+      {
+       "tag": "",
+       "text": "folders.list gives each folder's legislation (BE or LU)"
+      }
+     ]
+    },
+    {
+     "heading": "Example",
+     "tag": "Documented",
+     "items": [
+      {
+       "tag": "",
+       "text": "Belgian domestic sale at 21 %"
+      },
+      {
+       "tag": "",
+       "text": "Rate 21 · origin 0 ('Vente nationale') · type 0 (National)"
+      }
+     ]
+    },
+    {
+     "heading": "The proposal",
+     "tag": "Proposal",
+     "items": [
+      {
+       "tag": "",
+       "text": "Connector keeps a VAT-code list per folder legislation and direction"
+      },
+      {
+       "tag": "",
+       "text": "tax_code becomes one combination; unknown codes rejected before calling Horus"
+      },
+      {
+       "tag": "",
+       "text": "On read, the code is rebuilt from line VAT fields; null when ambiguous"
+      },
+      {
+       "tag": "C2",
+       "text": "Chift must accept the approach and the code format"
+      }
+     ]
+    },
+    {
+     "heading": "What Horus must confirm",
+     "tag": "To confirm",
+     "items": [
+      {
+       "tag": "H1",
+       "text": "Are the files current, complete and authoritative?"
+      },
+      {
+       "tag": "H1",
+       "text": "Does the API accept Luxembourg origins missing from its value lists?"
+      },
+      {
+       "tag": "H1",
+       "text": "Which combination for non-VAT-liable folders? PCT sent as 35 or 0.35?"
+      },
+      {
+       "tag": "H1",
+       "text": "What do VAT codes on read mean? Can the VAT kind be returned?"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [
+     "Spreadsheet",
+     "Belgium",
+     "Luxembourg",
+     "Fields of one combination"
+    ],
+    "rows": [
+     [
+      "Sales",
+      "18",
+      "58",
+      "TaxType, TaxRate, TaxOrigin (+ country for EU one-stop-shop sales)"
+     ],
+     [
+      "Purchases",
+      "109",
+      "146",
+      "TaxType, TaxKind, TaxRate, TaxCondition, TaxConditionValue, TaxOrigin"
+     ]
+    ]
+   },
+   "callout": "Fallback if Horus cannot confirm the files: start with a reduced VAT-code list (proposal)",
+   "notes": "This is the most important transformation. Chift sends one tax_code per invoice line, the id of a VAT code. Horus has no such code: each line carries a rate, an origin and a type, plus kind and condition on purchases, and only the combinations in two published spreadsheets are accepted; the counts are on the slide. My proposal is that the connector owns a VAT-code list per folder legislation and direction, and rejects unknown codes before calling Horus. The spreadsheets and the API reference disagree in places, which is why H1 is the first question for Horus. Likely question: why not use the VatCode Horus returns on read? Its meaning is undocumented, so that is part of H1."
+  },
+  {
+   "id": "14",
+   "kicker": "Task B · Outstanding items",
+   "title": "Client open items are native; supplier open amounts must be computed",
+   "lead": "The route returns a folder's open items for clients or suppliers. Horus covers both sides, but not in the same way.",
+   "blocks": [
+    {
+     "heading": "Clients",
+     "tag": "Documented",
+     "items": [
+      {
+       "tag": "",
+       "text": "Open sales invoices list: native open amount, due date, invoice currency"
+      },
+      {
+       "tag": "",
+       "text": "Joined with customer ledger lines for account and matching number"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Items keep their invoice currency (C16, H4)"
+      }
+     ]
+    },
+    {
+     "heading": "Suppliers",
+     "tag": "Needs confirmation",
+     "items": [
+      {
+       "tag": "",
+       "text": "No purchase-side open-invoice list: only supplier ledger lines"
+      },
+      {
+       "tag": "",
+       "text": "Connector computes open amounts from unmatched lines (Credit − Debit)"
+      },
+      {
+       "tag": "H8",
+       "text": "Partly paid invoices depend on H8; otherwise a fallback ledger read"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "No Horus paging: the connector pages the full set (H5, C14) · Signs and currency are proposals (C5, C16, H4)",
+   "notes": "Outstanding items show the asymmetry best. For clients, Horus has a ready list of open sales invoices with a documented open amount; we join it with customer ledger lines to get the account and the matching number. For suppliers there is no equivalent, so the connector computes open amounts from ledger lines not yet matched. The documentation does not say whether partially matched lines are returned. If they are not, partly paid supplier invoices silently disappear, which is why H8 is a before-build question. The first test: one partly paid purchase invoice and one partly paid sales invoice. Likely question: one call per supplier? No, provided that leaving out the company filter returns every partner, also H8."
+  },
+  {
+   "id": "15",
+   "kicker": "Client impact",
+   "title": "Clients will notice numeric numbers, review drafts and lost line detail",
+   "lead": "What client applications and their users will see with the Horus connector, and what to do. Rows marked proposal depend on Chift's decisions.",
+   "blocks": [],
+   "table": {
+    "headers": [
+     "Area",
+     "What clients notice",
+     "What to do"
+    ],
+    "rows": [
+     [
+      "Numbers",
+      "Invoice numbers must be numeric; Horus does not number API invoices",
+      "Send a numeric number, printed one in reference; non-numeric rejected (proposal, C7)"
+     ],
+     [
+      "Accountant review",
+      "Pushed entries may wait for review and come back as drafts",
+      "Choose posting mode at activation: review (proposed default) or direct (C1)"
+     ],
+     [
+      "Corrections and ids",
+      "Pushed invoices cannot be deleted; edits come back with a new id",
+      "Validate before pushing; match on journal and number, not the id alone"
+     ],
+     [
+      "Customers",
+      "One address; no person names, mobile or notes; individuals become companies",
+      "Send the main address, full name, and a VAT number or external_reference"
+     ],
+     [
+      "Invoice lines",
+      "Quantity, unit price and unit are not kept; reads return quantity 1",
+      "Keep line detail in the client application"
+     ],
+     [
+      "Foreign currency",
+      "Operations stored in euro; paid sales and purchase invoices read in euro (proposal)",
+      "Keep original-currency amounts in the client application (C15, C16, H4)"
+     ],
+     [
+      "Incremental sync",
+      "updated_after misses deleted or replaced invoices",
+      "Schedule a periodic full re-sync"
+     ]
+    ]
+   },
+   "callout": "Withholding tax, the Dutch G/N split and a forced period have no place in Horus: rejected (proposal, C3)",
+   "notes": "This is the slide I would share with a client application team, because it translates the mapping into what they will actually see. The biggest frictions are numbering and review: a vendor used to 'posted' will see drafts until the accountant confirms, unless Chift chooses direct posting. Second, a pushed invoice cannot be deleted through the integration, and an edited one comes back with a new id, so matching on journal and number matters. The currency row is a proposal until Horus answers H4. Likely question: which is the hardest to explain to clients? Probably the new id after an edit, because it breaks stored references; a periodic full re-sync covers it."
+  },
+  {
+   "id": "16",
+   "kicker": "Decisions for Chift",
+   "title": "Five Chift decisions shape what the connector promises clients",
+   "lead": "C1, C7, C14 and C15 are before-build questions; C2 shapes the VAT design. Each proposal is a recommendation, not an agreed rule.",
+   "blocks": [
+    {
+     "heading": "Posting mode",
+     "tag": "C1 · Before build",
+     "items": [
+      {
+       "tag": "Decision",
+       "text": "Push entries for accountant review, or confirm them directly?"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Mode per connection, review by default; return the status actually stored"
+      },
+      {
+       "tag": "Why",
+       "text": "Confirmation is accountant validation; invoices cannot be deleted through the API"
+      }
+     ]
+    },
+    {
+     "heading": "Invoice numbering",
+     "tag": "C7 · Before build",
+     "items": [
+      {
+       "tag": "Decision",
+       "text": "Reject non-numeric numbers? What happens to invoices without a number?"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Reject non-numeric; an unnumbered invoice goes to review as a draft"
+      },
+      {
+       "tag": "Why",
+       "text": "Horus stores numbers as numbers and does not number API invoices"
+      }
+     ]
+    },
+    {
+     "heading": "Caching and timeouts",
+     "tag": "C14 · Before build",
+     "items": [
+      {
+       "tag": "Decision",
+       "text": "Cache per folder and between page calls? Which timeout applies?"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Cache reference data per folder and results between page calls"
+      },
+      {
+       "tag": "Why",
+       "text": "Horus lists cannot be paged; without a cache, every page re-reads the period"
+      }
+     ]
+    },
+    {
+     "heading": "Foreign-currency operations",
+     "tag": "C15 · Before build",
+     "items": [
+      {
+       "tag": "Decision",
+       "text": "Does Chift core or the connector convert operations to EUR?"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Convert at the supplied rate rather than reject; original currency not kept"
+      },
+      {
+       "tag": "Why",
+       "text": "Horus operation lines have no currency field; Chift requires a rate"
+      }
+     ]
+    },
+    {
+     "heading": "VAT-code list",
+     "tag": "C2 · Route design",
+     "items": [
+      {
+       "tag": "Decision",
+       "text": "Accept a connector-built VAT-code list per folder?"
+      },
+      {
+       "tag": "Proposal",
+       "text": "One list per legislation and direction; null on read when ambiguous"
+      },
+      {
+       "tag": "Why",
+       "text": "Horus has no VAT-code list and accepts no VAT code on write"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "",
+   "notes": "These are decisions I cannot make for Chift: they change what Chift promises its clients and how the connector behaves next to other connectors. For each one I give a proposal, so the discussion starts from something concrete. C1 is the most visible: Chift defaults to 'posted', while Horus keeps API entries unconfirmed for the accountant. C7 follows from Horus storing numbers as numbers. C14 and C15 are platform questions, and C2 decides the whole VAT approach. Likely question: why review by default? Because a wrong confirmed invoice cannot be deleted through the API, and review is how Horus is designed; direct posting stays available per connection."
+  },
+  {
+   "id": "17",
+   "kicker": "Questions for Horus",
+   "title": "Eleven Horus answers are needed before development starts",
+   "lead": "The before-build questions for Horus, grouped by theme. Other questions shape one route's design or can be checked in a test folder.",
+   "blocks": [
+    {
+     "heading": "VAT and documents",
+     "tag": "H1 · H2",
+     "items": [
+      {
+       "tag": "H1",
+       "text": "Are the tax-combination files current, complete and authoritative?"
+      },
+      {
+       "tag": "H2",
+       "text": "Can credit notes sit in invoice daybooks? Can the type be read?"
+      }
+     ]
+    },
+    {
+     "heading": "Numbering and confirmation",
+     "tag": "H3 · H21",
+     "items": [
+      {
+       "tag": "H3",
+       "text": "Is a number unique per daybook and year? Safe retry after a timeout?"
+      },
+      {
+       "tag": "H21",
+       "text": "May every user confirm via the API? Do unconfirmed entries count in balances?"
+      }
+     ]
+    },
+    {
+     "heading": "Reads and volumes",
+     "tag": "H4 · H5 · H8",
+     "items": [
+      {
+       "tag": "H4",
+       "text": "Which currency are ledger amounts in? Rate direction? Folder always EUR?"
+      },
+      {
+       "tag": "H5",
+       "text": "Rate, size or time limits on lists without paging?"
+      },
+      {
+       "tag": "H8",
+       "text": "Do outstanding lists return all partners, partially matched lines included?"
+      }
+     ]
+    },
+    {
+     "heading": "Access and testing",
+     "tag": "H17 · H19 · H24",
+     "items": [
+      {
+       "tag": "H19",
+       "text": "How does Chift register an integration, and which user authorises?"
+      },
+      {
+       "tag": "H17",
+       "text": "Can Chift get a test licence or folder, and remove test data?"
+      },
+      {
+       "tag": "H24",
+       "text": "Which API addresses are valid, and how do connections behave over time?"
+      }
+     ]
+    },
+    {
+     "heading": "Documentation",
+     "tag": "H20",
+     "items": [
+      {
+       "tag": "H20",
+       "text": "Is docs.horus-software.be authoritative, and is the apiary version deprecated?"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Proposal: no build without a test licence, because the API runs on real data",
+   "notes": "These are the before-build questions for Horus, grouped so they are easy to send as one list. If I could ask only four first: are the VAT spreadsheets current, what are the limits and can we get a test licence, how do numbering and retries work, and how are partial matches returned for suppliers. The access questions come first in time, because registration and a test folder unlock every other check. Likely question: why is H20 there? The case links the older apiary documentation; I used the current docs and did not compare the two, so Horus should confirm which one is authoritative."
+  },
+  {
+   "id": "18",
+   "kicker": "Recommendation",
+   "title": "Validate with Horus first, then build in three phases",
+   "lead": "A short validation phase rather than a full build. The ledger-based reads wait until Horus has answered.",
+   "blocks": [
+    {
+     "heading": "Gate 0 · Validate",
+     "tag": "Go/no-go",
+     "items": [
+      {
+       "tag": "",
+       "text": "Send before-build questions; request test licence and registration details"
+      },
+      {
+       "tag": "",
+       "text": "Settle Chift decisions: posting mode, numbering, VAT codes, unsupported inputs"
+      },
+      {
+       "tag": "",
+       "text": "No build without a test licence"
+      }
+     ]
+    },
+    {
+     "heading": "Phase 1 · Reference routes and simple creates",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Reference reads, then client and ledger-account creation"
+      },
+      {
+       "tag": "",
+       "text": "Measure response times on the largest test folder"
+      }
+     ]
+    },
+    {
+     "heading": "Phase 2 · Invoice creation and operations",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Invoice creation and miscellaneous operations"
+      },
+      {
+       "tag": "",
+       "text": "Test VAT translation, numbering, duplicates and timeouts"
+      }
+     ]
+    },
+    {
+     "heading": "Phase 3 · Ledger-based reads",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Invoice retrieval and outstanding items"
+      },
+      {
+       "tag": "",
+       "text": "After Horus answers on credit notes, currency, partial matching, limits"
+      }
+     ]
+    },
+    {
+     "heading": "Fallbacks if answers disappoint",
+     "tag": "Proposal",
+     "items": [
+      {
+       "tag": "H1",
+       "text": "Reduced VAT-code list if Horus cannot confirm the files"
+      },
+      {
+       "tag": "H5",
+       "text": "Mandatory date window on invoice retrieval if volumes are a problem"
+      },
+      {
+       "tag": "H8",
+       "text": "Read supplier ledger lines if partly matched lines are missing"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "A proposal for Chift's decision, not a commitment on behalf of Chift or Horus",
+   "notes": "My recommendation is deliberately cautious. Gate 0 is cheap: send the questions, get a test licence, settle Chift's decisions. Phase 1 builds the low-risk routes that also prove the connection, the caching and the response times. Phase 2 adds the creates where VAT and numbering matter. Phase 3 holds the reads that carry most open questions. Throughout, the Task B tables serve as acceptance criteria, and every confirmed answer updates the detailed reference. The fallbacks keep the plan alive if answers disappoint. Likely question: how long will it take? I gave relative effort per route, low, medium or high, but no days: that depends on Chift's connector framework and on Horus's answers."
+  },
+  {
+   "id": "19",
+   "kicker": "Summary",
+   "title": "No route is ruled out; validation decides the build",
+   "lead": "Questions and discussion.",
+   "blocks": [
+    {
+     "heading": "In three lines",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "The documentation rules out none of the 11 routes; only one is confirmed"
+      },
+      {
+       "tag": "",
+       "text": "Effort and risk sit in VAT, posting and numbering, and ledger-based reads"
+      },
+      {
+       "tag": "Proposal",
+       "text": "Validate with Horus and a test licence, then build in three phases"
+      }
+     ]
+    },
+    {
+     "heading": "Where to find the detail",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Concise report: chift_horus_connector_assessment.html, sections 1–6 and appendices A–B"
+      },
+      {
+       "tag": "",
+       "text": "Detailed reference: chift_horus_mapping_report.html, unchanged; corrections in appendix B"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Proposals are analysis, not commitments on behalf of Chift or Horus",
+   "notes": "To close: Horus has a documented endpoint for the core object of every route, so nothing is ruled out, but only analytic accounts is fully confirmed. The effort and the risk sit in VAT, posting and numbering, and the reads rebuilt from the ledger. So my proposal is to validate first and build in phases. The concise report is the position I defend; the detailed reference holds the full mapping. Likely question: you changed your conclusion between versions? Yes. I reviewed my own work against the documentation and separated what is documented from what I assumed. The material corrections are listed in appendix B."
+  },
+  {
+   "id": "A1",
+   "kicker": "Appendix",
+   "title": "The self-review tightened claims and turned rules into proposals",
+   "lead": "The detailed reference stays unchanged; this report follows the corrected position. The seven high-impact changes:",
+   "blocks": [],
+   "table": {
+    "headers": [
+     "Topic",
+     "Before (detailed reference)",
+     "Now (concise report)"
+    ],
+    "rows": [
+     [
+      "Feasibility headline",
+      "All 11 routes buildable, none blocked; 9 with workarounds",
+      "None ruled out; 1 confirmed, 6 with assumptions, 4 need confirmation"
+     ],
+     [
+      "VAT spreadsheets",
+      "Listed as not available; requested from Horus",
+      "Both analysed (BE and LU counts); discrepancies flagged; H1 asks Horus to confirm"
+     ],
+     [
+      "Foreign-currency operations",
+      "Rejected: miscellaneous operations EUR-only",
+      "Proposal: converted to EUR at the supplied rate; who converts is C15"
+     ],
+     [
+      "Posting status default",
+      "'Posted' → confirmed; per-consumer option to push unconfirmed",
+      "Proposal: posting mode per connection, review by default (C1, H21)"
+     ],
+     [
+      "Invoice or credit note on read",
+      "Sign of the partner line decides; open-items type takes precedence",
+      "Proposal: daybook type decides; sign only without a credit-note daybook (H2)"
+     ],
+     [
+      "Supplier open amounts",
+      "Computed from matching groups",
+      "Unmatched line open in full; partly matched groups depend on H8"
+     ],
+     [
+      "Recommendation",
+      "Proceed with all eleven routes",
+      "Short validation phase first, then a phased build; a proposal"
+     ]
+    ]
+   },
+   "callout": "Appendix B of the report lists all 18 changes, with the reason for each",
+   "notes": "I include this because the conclusion changed between versions, and I would rather show it than have it found. After the first version I challenged my own work as a senior reviewer would. The headline moved from 'all feasible' to a split by evidence. I found the Horus VAT spreadsheets I had first missed. And several implementation rules became proposals or open questions, such as the posting default and the credit-note rule on read. The detailed reference is kept as the record; the concise report is the position I defend. Likely question: does this mean the reference is wrong? Where they differ, the concise report and appendix B apply."
+  },
+  {
+   "id": "A2",
+   "kicker": "Appendix",
+   "title": "Every claim rests on listed sources and carries an evidence label",
+   "lead": "Desk analysis of the documentation; no request was sent to a Horus licence or a Chift environment.",
+   "blocks": [
+    {
+     "heading": "Sources",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "The case: Part 1, Task A (10 routes) and Task B (3 routes)"
+      },
+      {
+       "tag": "",
+       "text": "Chift contract: OpenAPI in Chift's Python SDK 0.6.16; docs.chift.eu unreachable"
+      },
+      {
+       "tag": "",
+       "text": "Horus: 72 endpoint pages (docs.horus-software.be, 24 Sept 2026), 15 guide pages"
+      },
+      {
+       "tag": "",
+       "text": "Horus tax-combination spreadsheets, downloaded 13 October 2026"
+      },
+      {
+       "tag": "",
+       "text": "Not available: Quickstart, registration, FAQ, changelog, Postman, webhooks"
+      }
+     ]
+    },
+    {
+     "heading": "How to read the labels",
+     "tag": "",
+     "items": [
+      {
+       "tag": "F",
+       "text": "Documented: stated in a source"
+      },
+      {
+       "tag": "D",
+       "text": "Derived: deduced from the sources, e.g. from a missing field"
+      },
+      {
+       "tag": "A",
+       "text": "Assumption: a proposal or interpretation to confirm"
+      },
+      {
+       "tag": "?",
+       "text": "To confirm: not documented"
+      }
+     ]
+    },
+    {
+     "heading": "In the detailed reference",
+     "tag": "",
+     "items": [
+      {
+       "tag": "",
+       "text": "Endpoint inventory (72 endpoints) and complete call sequences"
+      },
+      {
+       "tag": "",
+       "text": "Edge cases, error scenarios and cross-route working assumptions"
+      },
+      {
+       "tag": "",
+       "text": "Dependencies on Chift routes outside the case list"
+      },
+      {
+       "tag": "",
+       "text": "Shared connector building blocks and all detail-level questions"
+      }
+     ]
+    }
+   ],
+   "table": {
+    "headers": [],
+    "rows": []
+   },
+   "callout": "Method: same questions for every route, independent check, then a critical review (appendix B)",
+   "notes": "For transparency on evidence. I used the current Horus documentation, while the case links the older apiary version; the two were not compared, which is question H20. The Chift contract comes from the OpenAPI file bundled in the Python SDK, because docs.chift.eu was not reachable from my environment, so Chift should confirm nothing important has changed. Every statement carries a label: documented, derived, assumption or to confirm, and proposals are marked as such. Likely question: why not call the API? No sandbox is documented and requests run on real data, so live checks need the test licence from Gate 0."
+  }
+ ]
+}

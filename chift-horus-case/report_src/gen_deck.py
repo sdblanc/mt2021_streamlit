@@ -178,10 +178,10 @@ def L_routes(s, D):
     rows = ''
     for r in D['routes']:
         main = '<br>'.join(esc(re.sub(r' \(.*\)$', '', e)) for e in r['horus_main'])
-        rows += (f'<tr><td>{esc(short_route(r["route"]))}<span class="sub">{esc(r["chift"])}</span></td><td class="eps">{main}</td>'
+        rows += (f'<tr><td title="{esc(r["chift"])}">{esc(short_route(r["route"]))}</td><td class="eps">{main}</td>'
                  f'<td>+{len(r["horus_support"])}</td><td><span class="fz fz-{FZ[r["feasibility"]]}">{esc(r["feasibility"])}</span></td>'
                  f'<td>{eff_html(route_effort(r["route"], eff))}</td></tr>')
-    t = ('<table class="t compact"><thead><tr><th>Chift route</th><th>Main Horus endpoint(s)</th><th>Supporting</th><th>Feasibility</th><th>Build effort</th></tr></thead>'
+    t = ('<table class="t compact routes"><thead><tr><th>Chift route</th><th>Main Horus endpoint(s)</th><th>Supporting endpoints</th><th>Feasibility</th><th>Build effort</th></tr></thead>'
          f'<tbody>{rows}</tbody></table>')
     return head(s) + f'<div class="body">{t}{callout(s)}</div>'
 
@@ -219,18 +219,22 @@ def L_chart(s, D):
 def L_taskb(s, D):
     steps = [b for b in s['blocks'] if b['heading'].lower() != 'key points']
     kp = next((b for b in s['blocks'] if b['heading'].lower() == 'key points'), None)
-    flow = '<ol class="vflow">' + ''.join(f'<li><b>{fmt(b["heading"])}</b>{" ".join(fmt(x["text"]) for x in b["items"])}</li>' for b in steps) + '</ol>'
-    right = f'<div class="panel"><h3>Key points</h3>{items(kp["items"], "b sm")}</div>' if kp else ''
-    return (head(s) + f'<div class="body"><div class="tb"><div>{flow}</div>{right}</div>{table(s.get("table"), "t compact")}{callout(s)}</div>')
+    flow = '<ol class="hsteps">' + ''.join(f'<li><b>{fmt(b["heading"])}</b>' + ''.join(f'<span>{fmt(x["text"])}</span>' for x in b['items']) + '</li>' for b in steps) + '</ol>'
+    left = f'<div class="panel"><h3>Key points</h3>{items(kp["items"], "b sm")}</div>' if kp else ''
+    return head(s) + f'<div class="body">{flow}<div class="tb3">{left}<div>{table(s.get("table"), "t compact")}</div></div>{callout(s)}</div>'
 
 
 def L_vat(s, D):
     v = vat_counts()
-    t = ('<table class="t compact"><thead><tr><th>Horus spreadsheet</th><th>Belgium</th><th>Luxembourg</th></tr></thead><tbody>'
-         f'<tr><td>Sales combinations</td><td>{v[("sales", "BE")]}</td><td>{v[("sales", "LU")]}</td></tr>'
-         f'<tr><td>Purchase combinations</td><td>{v[("purchases", "BE")]}</td><td>{v[("purchases", "LU")]}</td></tr></tbody></table>')
+    t = s.get('table') or {}
+    txt = json.dumps(t)
+    for n in v.values():  # the drafted table must carry the counts from the spreadsheets
+        assert str(n) in txt, f'VAT count {n} missing from slide table'
+    if not t.get('headers'):
+        t = {'headers': ['Horus spreadsheet', 'Belgium', 'Luxembourg'],
+             'rows': [['Sales combinations', v[('sales', 'BE')], v[('sales', 'LU')]], ['Purchase combinations', v[('purchases', 'BE')], v[('purchases', 'LU')]]]}
     blocks = ''.join(f'<div class="panel"><h3>{fmt(b["heading"])}{tag(b.get("tag"))}</h3>{items(b["items"], "b sm")}</div>' for b in s['blocks'])
-    return head(s) + f'<div class="body"><div class="cols c2"><div style="display:grid;gap:14px;align-content:start">{t}{table(s.get("table"), "t compact")}</div><div style="display:grid;gap:14px;align-content:start">{blocks}</div></div>{callout(s)}</div>'
+    return head(s) + f'<div class="body">{table(t, "t compact")}<div class="vat-grid">{blocks}</div>{callout(s)}</div>'
 
 
 def L_timeline(s, D):
@@ -262,7 +266,7 @@ def build(out):
     total = len(S)
     for i, s in enumerate(S, 1):
         lay = LAYOUT[s['id']]
-        cls = ['slide', lay]
+        cls = ['slide', 'lay-' + lay]
         if s['id'].startswith('A'):
             cls.append('appendix')
         body = RENDER[lay](s, D)
