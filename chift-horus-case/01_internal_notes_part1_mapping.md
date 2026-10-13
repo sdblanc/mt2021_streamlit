@@ -1,6 +1,8 @@
 # Chift × Horus: Part 1 (mapping), internal working notes
 
-> **Internal only. Not for Chift.** These are my study and prep notes. The external deliverable is `chift_horus_mapping_report.html`.
+> **Internal only. Not for Chift.** These are my study and prep notes. **Present from `chift_horus_connector_assessment.html`** (the concise, interview-ready report). `chift_horus_mapping_report.html` is the detailed technical reference and is **kept unchanged on purpose**, so it still shows the pre-review positions; the material corrections are listed in appendix B of the assessment. Plain-language interview prep: `02_interview_prep_guide.md`.
+>
+> **How to read section references below:** these notes were revised against the corrected source data (`data/*.json`, `report_src/curated*.py`). Mentions of "section 6 Impact on client applications", the rating columns, appendix C and the renumbered sections 6–10 describe that corrected detailed analysis, which was **not** regenerated as HTML. In the assessment, the equivalents are: client impact → section 5 "What Chift's clients will notice"; VAT combinations → the VAT box in section 4; feasibility levels → sections 1 and 3; questions → section 6 (same ids).
 >
 > **Status:** Part 1 is complete and has been revised after a senior BA review (63 issues: 3 critical, 39 major, 21 minor). The review was applied to the mapping data, the report and these notes. Every route is mapped to Horus and checked against the Horus API reference, the guides and the tax-combination files. Open points are listed explicitly; nothing in these notes fills a gap with guesswork. This is a **desk analysis**: no request was sent to a Horus license or a Chift environment.
 
@@ -439,7 +441,8 @@ The interview guide (`02_interview_prep_guide.md`) explains the reasoning in pla
 
 | File | What it is |
 |---|---|
-| `chift_horus_mapping_report.html` | **External deliverable** for Chift (self-contained; open in any browser) |
+| `chift_horus_connector_assessment.html` | **Main deliverable** for Chift: concise, interview-ready report (self-contained; open in any browser) |
+| `chift_horus_mapping_report.html` | Detailed technical reference, kept unchanged (pre-review positions; corrections listed in the assessment's appendix B) |
 | `01_internal_notes_part1_mapping.md` | These notes (internal) |
 | `02_interview_prep_guide.md` | Interview guide: approach, key mapping decisions, concepts, assumptions, likely questions, what to refer to technical colleagues (internal) |
 | `03_critical_review_register.md` | Senior-review issue register: 63 issues with evidence, correction and "if Chift raises it" (internal) |

@@ -71,7 +71,8 @@
     "POST /invoices.sales.outstanding.list (sales: payment status, invoice currency)",
     "POST /fiscal-years.list (default period, cached)",
     "GET /folders.info (legislation for VAT codes, cached)",
-    "POST /cost-schemas.list, /cost-sections.list (analytics lookup, cached)",
+    "POST /cost-schemas.list (analytics lookup, cached)",
+    "POST /cost-sections.list (analytics lookup, cached)",
     "POST /accounts.list (partner account number, cached)",
     "POST /companies.list (partner info fallback, cached)",
     "GET /book-entries.info (changed entries, incremental reads)"
@@ -130,11 +131,13 @@
    "horus_support": [
     "POST /daybooks.list (journal per invoice type, cached)",
     "POST /accounts.list (validate line accounts, cached)",
-    "POST /cost-schemas.list, /cost-sections.list (analytic ids to codes, cached)",
+    "POST /cost-schemas.list (analytic ids to codes, cached)",
+    "POST /cost-sections.list (analytic ids to codes, cached)",
     "GET /folders.info (legislation for VAT list, cached)",
     "POST /fiscal-years.list (closed-period check, every request)",
     "GET /companies.info (partner folder and role check)",
-    "POST /companies.list, /companies.new (partner_info: find or create)",
+    "POST /companies.list (partner_info: find the company)",
+    "POST /companies.new (partner_info: create it if missing, proposal)",
     "POST /book-entries.list (duplicate number check)",
     "GET /book-entries.info (read back created entry)",
     "POST /account-histories.list (line read-back, when needed)"
@@ -496,7 +499,7 @@
     "Whether child sections appear at top level in the section list; the hierarchy has no Chift field."
    ],
    "feasibility": "Confirmed",
-   "feasibility_reason": "Listing every analytic account of every plan is documented, via a loop over at most eight plans; only computed balances, if Chift wants them (C4), remain open.",
+   "feasibility_reason": "Listing every analytic account of every plan is documented, via a loop over at most eight plans. Remaining points are minor: balances if Chift wants them (C4), whether locked sections should show as inactive (H13), and a test-folder check that child sections are listed alongside their parents.",
    "considerations": [
     {
      "text": "One Chift call needs up to nine Horus calls (schema list plus one section list per plan), so results are cached per folder, as Horus recommends.",
@@ -548,7 +551,7 @@
     "Chift: sign convention and partial-match allocation (C5); one item per due date or invoice, and unallocated payments (C17); unposted payments (C10)."
    ],
    "not_concluded": [
-    "Carried-forward items: IsReport is undefined and no link to the original exists, so original_document stays null. An item might also appear twice (prior-year and carry-forward line), overstating open items. Guard: a ledger line of an entry already kept from the open sales list is never emitted again; test on a folder spanning a year-end (H8).",
+    "Carried-forward items: IsReport is undefined and no link to the original exists, so original_document stays null. An item might also appear twice (prior-year and carry-forward line), overstating open items. Proposed guard: a ledger line of an entry already kept from the open sales list is never emitted again; test on a folder spanning a year-end (H8).",
     "Whether the debit/credit signs in the documented examples are real; the supplier example shows a debit on a supplier line.",
     "How partially paid supplier invoices behave if Horus omits partly matched lines; a test-folder check must choose the fallback."
    ],
@@ -1907,7 +1910,7 @@
    "call_flow": [
     "POST /daybooks.list (cached per folder): gives each journal's id, code and type. This feeds journal_id and journal_type, because supplier lines carry only the journal code.",
     "type=client: POST /invoices.sales.outstanding.list for the whole folder (ConfirmedOnly when unposted_allowed=false). Returns open sales invoices, credit notes and linked payments with open amount, due date, invoice-currency amounts and payment remark.",
-    "type=client, in parallel: POST /customers.outstanding with no company filter. Returns customer ledger lines, joined on the line id to add account number, matching number and line comment.",
+    "type=client, in parallel: POST /customers.outstanding with no company filter. Returns customer ledger lines, joined on the line id to add account number, matching number and line comment. An open sales row missing from this list triggers GET /account-histories.info (fallback).",
     "type=supplier: POST /suppliers.outstanding with no company filter. Returns supplier ledger lines; the connector computes amount and open amount (Credit − Debit) and filters on Confirmed itself.",
     "Chift side: remove payments that appear twice, apply filters, sort, return the requested page and count the total. Optional, off by default (Proposal): GET /book-entries.info per entry for the supplier payment communication and carried-forward details."
    ],
@@ -2329,7 +2332,7 @@
    {
     "title": "'Posted' and numbering do not map one to one",
     "what": "API entries are unconfirmed by default, for accountant review. Numbers are numeric and may be 0 only while unconfirmed, and invoices have no automatic numbering. Whether every licence and user may confirm entries is undocumented.",
-    "implication": "A 'posted' request may be stored as a draft. A sales invoice to be confirmed without a number cannot be posted as confirmed (purchases: undocumented, H3), and numbers such as INV-2024/001 are rejected. Unnumbered entries cannot be found again after an accountant edit.",
+    "implication": "A 'posted' request may be stored as a draft. An invoice to be confirmed without a number cannot be posted as confirmed (for purchases, whose Number is nullable, the effect of an empty number is undocumented, H3), and numbers such as INV-2024/001 are rejected. Unnumbered entries cannot be found again after an accountant edit.",
     "handling": "Proposal: a posting mode per connection, review (default; entries unconfirmed) or direct ('posted' confirmed), always reporting the status actually stored. An invoice without a number is pushed for review and returned as a draft; the printed number goes in reference.",
     "decision_owner": "Chift (C1, C7); Horus, on confirmation rights and numbering (H21, H3).",
     "basis": "F",
@@ -2366,7 +2369,7 @@
     "title": "No idempotency key, and ids change on update",
     "what": "A create returns only an Id, and no idempotency key is documented. Updating an invoice or operation creates a new Id. Invoices, companies and accounts cannot be deleted through the API.",
     "implication": "A timed-out create can leave a duplicate that cannot be deleted. Every create needs a read-back to build the Chift response. Ids stored by client applications stop working after an edit.",
-    "handling": "Proposal: best-effort duplicate check before every create and any retry (VAT number, external reference, account or document number); never retry blindly; return an 'outcome unknown' error when the record has no key. Consumers should always send a number. Once Horus has returned an id, the request never ends in an error: if the read-back fails, the response is built from the request (operation_number null when Horus generated it) and the read-back is retried later, because a client retry could book a second entry that the API cannot delete.",
+    "handling": "Proposal: best-effort duplicate check before every create and any retry (VAT number, external reference, account or document number); never retry blindly; return an 'outcome unknown' error when the record has no key. Consumers should always send a number. Once Horus has returned an id, the request never ends in an error: if the read-back fails or shows a mismatch, the response is built from the request (operation_number null when Horus generated it) and the read-back is retried later, because a client retry could book a second entry that the API cannot delete.",
     "decision_owner": "Chift on the duplicate policy and errors (C6, C7); Horus on duplicates and commits after a timeout (H3).",
     "basis": "F",
     "routes": "All write routes; invoice retrieval"
@@ -2637,7 +2640,7 @@
    {
     "topic": "Rating scale replaced; analytic plans and ledger accounts",
     "reference_said": "Section 2 verdicts: Supported = \"One native Horus endpoint, plus cached reference data, serves the route with deterministic transformations\"; Supported with workaround = \"Feasible, but needs ... emulated filters, pagination or numbering\". Section 4: analytic plans is \"a 1:1 read of the cached schema list (supported, D11)\".",
-    "now": "Routes are rated by evidence, not effort: Confirmed, Feasible with assumptions, Needs confirmation or Not yet concluded, by their weakest material point. Analytic plans is Feasible with assumptions: parent_id rests on an undocumented field (MasterCostSchema), emulated paging is a deduction and hiding Free schemas is a proposal pending C9. Ledger account creation is Feasible with assumptions too, because the type it returns is the chart-of-accounts estimate. Folders is Feasible with assumptions.",
+    "now": "Routes are rated by evidence, not effort: Confirmed, Feasible with assumptions, Needs confirmation or Not yet concluded, by their weakest material point. Analytic plans is Feasible with assumptions: parent_id rests on an undocumented field (MasterCostSchema), and hiding Free schemas is a proposal pending C9. Ledger account creation is Feasible with assumptions too, because the type it returns is the chart-of-accounts estimate. Folders is Feasible with assumptions.",
     "why": "On the reference's own definition, analytic plans was \"Supported with workaround\": Chift's analytic-plans route is paginated while cost-schemas.list is not, and Free-type schemas are hidden pending C9. Under the new scale, every route whose response rests on an interpretation of undocumented Horus data (parent_id, a computed account type, the folder currency) is rated Feasible with assumptions, without exceptions.",
     "kind": "Correction",
     "impact": "Medium"
@@ -2733,7 +2736,7 @@
    {
     "topic": "Failed read-back after a create",
     "reference_said": "Miscellaneous operation call sequence: \"Accept it only if Data.Folder.Id == FolderId and Data.Daybook.Id == DaybookId (D13); otherwise return 400 (not expected for an Id this call has just created in that folder).\" Its edge cases cover a create that times out, not a read-back that fails after the create.",
-    "now": "Section 5, limitation 6: once Horus has returned an id, the request succeeds. If the read-back fails or shows a mismatch, the response is built from the request, the failure is logged and the read-back is retried later; nothing is re-created.",
+    "now": "Section 5, limitation 6 (proposal): once Horus has returned an id, the request succeeds. If the read-back fails or shows a mismatch, the response is built from the request, the failure is logged and the read-back is retried later; nothing is re-created.",
     "why": "An error invites a retry by the client or by Chift, which would book a second entry, possibly confirmed, that the API cannot delete. The record already exists once Horus has returned its id.",
     "kind": "Correction",
     "impact": "Medium"

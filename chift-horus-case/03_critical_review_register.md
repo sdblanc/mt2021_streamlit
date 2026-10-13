@@ -1,6 +1,8 @@
 # Chift × Horus, Part 1: critical review register (internal)
 
 > **Internal only. Not for Chift.** A senior-BA challenge of the Part 1 solution, used to revise the mappings, the notes and the external report. Companion to `02_interview_prep_guide.md`.
+>
+> **Note:** the corrections were applied to the source data and the notes. The detailed HTML reference (`chift_horus_mapping_report.html`) was then deliberately kept unchanged; the concise report `chift_horus_connector_assessment.html` follows the corrected positions and lists the material corrections in its appendix B.
 
 ## How the review was done
 

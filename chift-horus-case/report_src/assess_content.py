@@ -123,7 +123,7 @@ ROUTES_INTRO = ('This table answers Task A: for each Chift route, the main Horus
                 'also pull data from other Horus endpoints (reference data cached per folder, checks and read-backs, some used only in specific cases). '
                 'The "+ N" figure counts those supporting endpoints, not calls per request; each route\u2019s details list them with the specificities to be aware of. '
                 'Horus reads with filters (most <code>.list</code> endpoints) use POST, with the filters in the request body; simple reads by id '
-                '(<code>.info</code>) use GET. The feasibility column separates what the documentation confirms from what still depends on assumptions or answers.')
+                '(most <code>.info</code> endpoints) use GET. The feasibility column separates what the documentation confirms from what still depends on assumptions or answers.')
 FZ_LEGEND = ('<b>Confirmed</b>: the documentation shows Horus can serve the route; remaining work is mapping. '
              '<b>Feasible with assumptions</b>: the route can be built, but part of the Chift contract rests on an interpretation the documentation does not confirm. '
              '<b>Needs confirmation</b>: a point that affects correctness needs an answer from Horus or a decision from Chift before the design is final. '
@@ -140,8 +140,8 @@ TASKB_ORDER = [
 ]
 TASKB_INTRO = ('The case asks for these three routes at the level of each attribute and query parameter. Each table lists every Chift query parameter and '
                'attribute, the Horus field it maps to, the type of mapping, and what happens. For the two create routes the response rows are grouped: '
-               'Horus returns only the new id, so the response is built from a read-back of what Horus stores, and request values Horus cannot return '
-               '(for example line quantity, unit price and exact analytic percentages) are echoed.')
+               'Horus returns only the new id, so the response combines a read-back of what Horus stores (the stored record for client creation; number, status and last update for invoice creation) with values echoed from the request, including values Horus cannot return '
+               '(for example line quantity, unit price and exact analytic percentages); echoing is a proposal pending C4.')
 MAPPING_LEGEND = ('<p class="small"><b>Mapping types.</b> <span class="mp mp-direct">Direct</span> same meaning, possibly renamed · '
                   '<span class="mp mp-transform">Transform</span> format, code, sign or unit changes · '
                   '<span class="mp mp-lookup">Lookup</span> a Horus reference must be found first · '
@@ -180,19 +180,19 @@ CLIENT_IMPACT = [  # (area, what the client notices, what to do)
     ('Corrections and ids', 'A pushed invoice cannot be deleted through the integration, and an edited invoice or operation comes back with a new id.',
      'Validate before pushing; match entries on journal and number, not on the id alone.'),
     ('Customers', 'One address per customer; no person names, mobile or notes; individuals come back as companies. Without a VAT number or '
-     '<code>external_reference</code>, sending the same customer twice creates two customers.',
+     '<code>external_reference</code>, sending the same customer twice creates two customers under the proposed duplicate check (C6, C8).',
      'Send the main address, the full name, and a VAT number or <code>external_reference</code>.'),
-    ('Invoice lines', 'Amounts, VAT and analytics are kept, but quantity, unit price and unit are not: a read returns quantity 1.',
+    ('Invoice lines', 'Amounts, VAT and analytics are kept, but quantity, unit price and unit are not: a read returns quantity 1 (proposal, C4).',
      'Keep line detail in the client application.'),
     ('VAT codes', 'VAT codes come from a list the connector builds per folder (proposal, C2); some purchase VAT codes come back empty on read.',
      'Use the connector’s VAT-code list; use the rate and amount when the code is empty.'),
     ('Foreign currency', 'Miscellaneous operations in another currency are stored in euro. On read, paid sales invoices and purchase invoices in '
      'another currency come back in euro (proposal until Horus answers H4).',
      'Keep original-currency amounts in the client application (C15, C16, H4).'),
-    ('Incremental sync', '<code>updated_after</code> returns new and changed invoices, but not deleted or replaced ones.',
+    ('Incremental sync', '<code>updated_after</code> returns new and changed invoices, but not deleted or replaced ones; whether payments and accountant edits count as changes is still open (H10).',
      'Schedule a periodic full re-sync.'),
     ('Unsupported inputs', 'Withholding tax, the Dutch G/N split, and a forced period or delivery date in another month have no place in Horus.',
-     'Do not send them; requests that use them are rejected (proposal, C3).'),
+     'Do not send them. Proposal (C3): requests with withholding tax, a G/N split or a forced period in another month are rejected; for a delivery date in another month, rejecting or accepting is a Chift decision (C3, H10).'),
 ]
 LIMITS_INTRO = ('This section starts with what Chift\u2019s clients will notice, then lists the limitations behind it. "Proposed handling" is a '
                 'recommendation for discussion, not an agreed rule.')
