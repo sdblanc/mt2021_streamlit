@@ -79,6 +79,7 @@ def routes_section(groups, cross):
             'verdicts': [r['verdict'] for r in g['chift_routes'] if 'context' not in r['chift_name'].lower()],
             'one_line': meta['one_line'],
             'summary': g['summary'],
+            'brief': meta.get('brief', ''),
             'endpoints': g['horus_endpoints'],
             'sequence': g['call_sequence'],
             'considerations': [{'text': l['description'] + (' Impact: ' + l['impact'] if l.get('impact') else ''), 'label': l['label']} for l in g['limitations']],
@@ -169,11 +170,11 @@ def appendix_section(groups, cross):
     for r in inv:
         h.append(f'<tr><td class="mono">{esc(r["method"])} {esc(r["path"])}</td><td>{inline(r["purpose"])}</td><td>{"Yes" if r["writes"] else "No"}</td><td>{inline(r["chift_relevance"])}</td></tr>')
     h.append('</tbody></table></div></div></details>')
-    h.append('<details class="route" id="appendix-decisions"><summary><span class="r-title"><span class="caret">▸</span>B. Cross-route design decisions</span>'
-             '<span class="r-line">Rules applied consistently across routes after the consistency review.</span></summary><div class="r-body">')
-    h.append('<div class="table-wrap"><table><thead><tr><th>#</th><th>Decision</th><th>Rationale</th></tr></thead><tbody>')
+    h.append('<details class="route" id="appendix-decisions"><summary><span class="r-title"><span class="caret">▸</span>B. Cross-route working assumptions</span>'
+             '<span class="r-line">Proposals applied consistently across all route mappings. They are not agreed rules: most depend on an open question in section 8 and will change if the answer differs.</span></summary><div class="r-body">')
+    h.append('<div class="table-wrap"><table><thead><tr><th>#</th><th>Working assumption</th><th>Rationale</th><th>Depends on</th></tr></thead><tbody>')
     for d in K.DECISIONS:
-        h.append(f'<tr><td class="num">{esc(d[0])}</td><td>{d[1]}</td><td>{d[2]}</td></tr>')
+        h.append(f'<tr><td class="num">{esc(d[0])}</td><td>{d[1]}</td><td>{d[2]}</td><td>{esc(K.DECISION_DEPENDS.get(d[0], ""))}</td></tr>')
     h.append('</tbody></table></div></div></details>')
     return ''.join(h)
 

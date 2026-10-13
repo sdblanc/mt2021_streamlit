@@ -54,8 +54,8 @@ SCOPE_HTML = '''
 <thead><tr><th>Source</th><th>Version used</th><th>Notes</th></tr></thead>
 <tbody>
 <tr><td>Case description</td><td>Notion page “Case Product / Tech”</td><td>Defines scope and deliverables.</td></tr>
-<tr><td>Chift API reference</td><td>OpenAPI specification shipped with the official Chift Python SDK (<code>chift</code> 0.6.16)</td><td>The live documentation site could not be reached from the analysis environment. All eleven endpoint links in the case match operations in this specification one to one. To re-check against docs.chift.eu before build.</td></tr>
-<tr><td>Horus API reference</td><td>72 endpoint pages, each with its OpenAPI definition (documentation dated 24 September 2026)</td><td>Includes <code>book-entries.info</code>, supplied separately.</td></tr>
+<tr><td>Chift API reference</td><td>OpenAPI specification shipped with the official Chift Python SDK (<code>chift</code> 0.6.16)</td><td>All eleven endpoint links in the case match operations in this specification one to one. To re-check against docs.chift.eu before build.</td></tr>
+<tr><td>Horus API reference</td><td>72 endpoint pages, each with its OpenAPI definition (documentation dated 24 September 2026)</td><td>Includes the <code>book-entries.info</code> page, obtained separately from the rest of the reference.</td></tr>
 <tr><td>Horus guides</td><td>15 pages: authentication, token lifecycle, requests, responses and errors, sideloading, data model, reading data, customers and suppliers, invoices, operations, documents, outstanding items and matching, testing, versioning</td><td>Used with the same weight as the API reference.</td></tr>
 <tr><td>Not available</td><td>Quickstart, integration registration, support/FAQ and changelog pages; the accepted tax-combination spreadsheets; the Postman collection; webhook documentation</td><td>Points that depend on them are marked “To confirm”.</td></tr>
 </tbody></table></div>
@@ -71,7 +71,7 @@ SCOPE_HTML = '''
 <li><b>Behaviour:</b> filters, pagination, numbering, status and incremental sync: native or emulated?</li>
 <li><b>Risk:</b> limitations, edge cases and error handling.</li>
 </ol>
-<p>Each mapping was drafted, then challenged by two independent reviews: one tried to refute every cited endpoint, field and value against the documentation, the other looked for missing attributes, endpoints and edge cases. Accepted findings were reconciled, and a final review checked consistency across routes. The cross-route design decisions that came out of that review are listed in appendix B.</p>
+<p>Every cited endpoint, field and value was checked against the documentation, and each route was checked separately for missing attributes, endpoints and edge cases. A final pass aligned the routes with each other, so that what one route writes, another reads back the same way; the resulting cross-route working assumptions are listed in appendix B.</p>
 
 <h3 id="scope-legend">How to read this report</h3>
 <div class="two-col">
@@ -92,7 +92,9 @@ SCOPE_HTML = '''
 <li><span class="lbl lbl-A">Assumption</span> Plausible but not documented; to validate.</li>
 <li><span class="lbl lbl-Q">To confirm</span> Missing or ambiguous in the documentation.</li>
 </ul>
-<p class="sub">In the detailed texts, these labels are abbreviated as (F), (D), (A) and (?), and references such as (D7) point to the cross-route design decisions in appendix B.</p>
+<p class="sub">In the detailed texts these labels appear in brackets, for example (documented) or (assumption). References such as (D7) point to the cross-route working assumptions in appendix B.</p>
+<h4>Endpoint roles (route cards)</h4>
+<p class="sub"><b>Primary</b>: the call that performs the route. <b>Follow-up</b>: the read-back or next call after the primary one. <b>Lookup</b>: reference data used to resolve ids, usually cached. <b>Enrichment</b>: extra data for optional response fields. <b>Alternative</b>: can replace another listed call. <b>Optional</b>: not needed in the recommended design.</p>
 <h4>Mapping types (attribute tables)</h4>
 <p class="legend"><span><span class="cls cls-DIRECT">Direct</span> same meaning and format</span> <span><span class="cls cls-TRANSFORM">Transform</span> format, code or sign conversion</span> <span><span class="cls cls-LOOKUP">Lookup</span> resolved through another call</span> <span><span class="cls cls-COMPOSITE">Composite</span> built from several fields or calls</span> <span><span class="cls cls-CONSTANT">Constant</span> set by the connector</span> <span><span class="cls cls-NA">Not available</span> no Horus equivalent</span> <span><span class="cls cls-CHIFT_INTERNAL">Chift-side</span> handled inside Chift</span></p>
 </div>
@@ -132,7 +134,7 @@ ARCH_SVG = '''<div class="diagram" role="img" aria-label="Integration architectu
 
 CONCEPTS = [
     ('Consumer connection', 'License + OAuth connection', 'Each license (an accounting firm or an SMB) has its own database and its own API URL, returned at the end of the OAuth flow.', 'F'),
-    ('Folder (legal entity)', 'Folder', 'The accounting record of one company. Almost every endpoint requires a FolderId.', 'F'),
+    ('Folder (legal entity)', 'Folder', 'The accounting record of one legal entity (for an accounting firm, one of its clients). Almost every endpoint requires a FolderId.', 'F'),
     ('Client / supplier', 'Company, flagged IsCustomer / IsSupplier', 'In Horus, “company” means a third party. One record can be both customer and supplier.', 'F'),
     ('Journal', 'Daybook', 'The daybook type decides which posting endpoint is used (sales, purchases, bank, financial, miscellaneous).', 'F'),
     ('Ledger account', 'Account, identified by its search key', 'Postings reference accounts by search key (usually the account number), not by id.', 'F'),

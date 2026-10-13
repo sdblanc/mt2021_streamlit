@@ -20,6 +20,22 @@ SANITISE = [
     (r'as of the reference export', 'in the current API reference'), (r'reference export', 'API reference'),
     (r'raw export example', 'reference example'), (r'raw export', 'reference'),
     (r'Harmonised conventions', 'Shared conventions'), (r'harmonised conventions', 'shared conventions'),
+    # basis labels written as letters -> words (avoid clashes with decision ids such as D7)
+    (r'\(F(?=[),:;])', '(documented'), (r'\(D(?=[),:;])', '(derived'), (r'\(A(?=[),:;])', '(assumption'), (r'\(\?(?=[),:;])', '(to confirm'),
+    (r'\[(F|D|A)/(F|D|A|\?)\]', ''), (r'\bLabel A:', 'Assumption:'), (r'\blabel(?:led)? A\b', 'treated as an assumption'), (r'\brule A\b', 'assumed rule'),
+    (r"Still '\?'", 'Still to confirm'), (r"'\?'", 'to confirm'), (r'\bF: ', 'documented: '), (r'\bD: ', 'derived: '), (r'\bA: ', 'assumption: '),
+    # raw enum labels
+    (r'CHIFT_INTERNAL plumbing', 'handled inside the connector'), (r'\(CHIFT_INTERNAL\)', '(done by the connector)'), (r'\[CHIFT_INTERNAL\]\s*', ''), (r'CHIFT_INTERNAL', 'Chift-side'),
+    (r'\bCONSTANT\b', 'Constant'),
+    # internal route shorthand -> route titles (not inside endpoint paths)
+    (r'(?<![./\w-])create_misc_operation\b', 'Miscellaneous operation creation'), (r'(?<![./\w-])misc_operation\b', 'Miscellaneous operation creation'),
+    (r'(?<![./\w-])get_invoices\b', 'Invoice retrieval'), (r'(?<![./\w-])create_invoice\b', 'Invoice creation'), (r'(?<![./\w-])create_client\b', 'Client creation'),
+    (r'(?<![./\w-])create_ledger_account\b', 'Ledger account creation'), (r'(?<![./\w-])get_chart_of_accounts\b', 'Chart of accounts retrieval'),
+    (r'(?<![./\w-])get_outstandings\b', 'Outstanding items'), (r'(?<![./\w-])get_journals\b', 'Journal retrieval'), (r'(?<![./\w-])get_folders\b', 'Folders retrieval'),
+    (r'(?<![./\w-])get_analytic_plans\b', 'Analytic plans retrieval'), (r'(?<![./\w-])get_analytic_accounts\b', 'Analytic accounts retrieval'),
+    (r'(?<![./\w-])journals_folders\b', 'Journals/folders'), (r'(?<![./\w-])ledger_accounts\b', 'Ledger accounts'),
+    (r'\bmisc[- ]op(s)?\b', r'miscellaneous operation\1'), (r'\bMisc[- ]op(s)?\b', r'Miscellaneous operation\1'),
+    (r'\bmisc operation', 'miscellaneous operation'), (r'\bMisc operation', 'Miscellaneous operation'), (r'\bLabel A\b', 'Treated as an assumption'),
 ]
 
 

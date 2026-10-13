@@ -17,6 +17,7 @@ KIND_TEXT = {
     'request_field': 'Request body', 'response_field': 'Response (what the connector returns)',
 }
 KIND_ORDER = ['path_param', 'query_param', 'request_field', 'response_field']
+ROLE_TEXT = {'primary': 'Primary', 'follow_up': 'Follow-up', 'lookup': 'Lookup', 'enrichment': 'Enrichment', 'alternative': 'Alternative', 'optional': 'Optional'}
 
 
 def esc(s):
@@ -125,7 +126,7 @@ def endpoint_list(eps):
     items = []
     for e in eps:
         items.append(
-            f'<li><span class="tag">{esc(e.get("pattern"))}</span>'
+            f'<li><span class="tag">{esc(ROLE_TEXT.get(e.get("pattern"), e.get("pattern")))}</span>'
             f'<span><span class="ep">{esc(e.get("method"))} {esc(e.get("path"))}</span> '
             f'<span class="sub">{inline(e.get("role"))} <i>({esc(e.get("cardinality"))})</i></span></span></li>')
     return '<ul class="endpoint-list">' + ''.join(items) + '</ul>'
@@ -144,7 +145,9 @@ def bullet_list(items, fmt):
 def route_card(rc):
     """rc: dict prepared in content.route_cards(groups)."""
     chips = ' '.join(chip(v) for v in rc['verdicts'])
-    body = [rich(rc['summary'])]
+    body = [f'<p>{rc["brief"]}</p>' if rc.get('brief') else '']
+    if rc.get('summary'):
+        body.append(f'<details class="route inner"><summary><span class="r-title"><span class="caret">▸</span>Detailed analysis</span></summary><div class="r-body">{rich(rc["summary"])}</div></details>')
     body.append('<div class="two-col"><div>')
     body.append('<h4>Horus endpoints</h4>' + endpoint_list(rc['endpoints']))
     body.append('</div><div>')

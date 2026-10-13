@@ -138,7 +138,7 @@ Each route below gives: the mapping in one sentence, the call pattern, why it ne
 - **Call pattern** for a typical request (customer invoices, one quarter, with lines, partner and payments): `book-entries.list` ×2 (one per daybook of types 200 + 250, partner sideloaded) + `account-histories.list` ×1 (lines, VAT, analytics, matching) + `invoices.sales.outstanding.list` ×1 (document type, open amount) + `account-histories.list` ×1 (payment lines) = **about 5 calls**, plus cached reference data. [D]
 - **Why several calls:** each part of a Chift invoice lives in a different Horus resource. This is the clearest example of the case's hint.
 - **Traps:**
-  - **Credit notes may sit in a sales daybook.** So read both sibling daybook types and classify each entry by the sign of the partner line (customer: net debit = invoice) [A, D1].
+  - **Credit notes may sit in a sales daybook.** So read both sibling daybook types and classify each entry by the sign of the partner line (customer: net debit = invoice) [A, D1]. For open sales items, `TransactionType` (0 invoice / 1 credit note) from `invoices.sales.outstanding.list` overrides the sign [F]. The sign rule is only needed for closed sales items and for purchases, where no document type is exposed (H2).
   - Periods are months [F], so day-level `date_from/to` is post-filtered.
   - No pagination [D], so the whole window is fetched each time.
   - An accountant's edit creates a **new id** [F]: reconcile on daybook + number.
@@ -150,18 +150,18 @@ Each route below gives: the mapping in one sentence, the call pattern, why it ne
 - **One sentence:** customer_* → sales endpoint, supplier_* → purchases endpoint; `Type` 0 = invoice, 1 = credit note; the PDF is sent in the same call (multipart). [F]
 - **Call pattern:** resolve the folder, daybook, partner, account search keys and cost sections (cached) → duplicate check on the document number → create → read back with `book-entries.info`. [D]
 - **Biggest trap, VAT:** Chift's `tax_code` is "the Id of the Tax Code" [F, Chift], but Horus has **no VAT-code entity**. Each line carries `TaxRate + TaxOrigin + TaxType` (+ `TaxKind`, `TaxCondition`, `TaxConditionValue` for purchases), and "only some combinations are valid", listed in spreadsheets we don't have [F, Guide: Posting…]. → The connector owns a **synthetic VAT catalogue** with one id grammar (`S-21-0-0`, `P-21-2-0-0-1-true`, D2).
-- **Second trap, analytics:** Chift sends % per plan; Horus wants **amounts on combinations of cost sections** [F]. Convert with a product of the percentages and largest-remainder rounding (D8). Show the worked example in the report (1,000 → 500 SALES/ALPHA + 500 SUPPORT/ALPHA).
+- **Second trap, analytics:** Chift sends % per plan; Horus wants **amounts on combinations of cost sections** [F]. Convert with a product of the percentages and largest-remainder rounding (D8). Show the worked example in the report (1,000 → 500 SALES/ALPHA + 500 SUPPORT/ALPHA). The independent-plans assumption is question C9.
 - **Other traps:**
-  - `Number` is numeric, and there's no auto-numbering on invoices [F].
+  - `Number` is numeric and required on sales (0 allowed only while unconfirmed) [F]. Invoices have no AutoGenerateNumber flag, unlike miscellaneous operations [D]. So a "posted" (confirmed) sale without `invoice_number` gets a number emulated by the connector, max(DocumentNo)+1 per daybook, which can race under concurrent pushes. Ask Horus for a next-number or auto-numbering option (H3).
   - No idempotency key and no invoice delete → duplicate check (D12).
-  - Horus checks `Total = Base + Tax` and that the line sums match [F].
+  - Horus checks `Total = Base + Tax` and that the line sums match [F]. By default Horus recalculates line tax (base × rate) within a 1-cent tolerance; we propose `OverrideTaxAmounts=true` so the issued invoice's VAT is booked exactly [A, decision needed]. `AllowUnbalanced` stays false.
   - API entries are **unconfirmed by default** "which lets the accountant review them" [F, Guide: Data model] → mapping "posted" to `Confirmed=true` is a *product decision* (D12).
 - **Market scope:** Horus is BE/LU (Legislation enum [F]), so the Dutch G/N split and withholding tax have no counterpart. Present this as market scope, not a connector gap.
 
 ### 5.4 Journal retrieval → `daybooks.list` (🟡) and 5.5 Folders → `folders.list` (✅)
 - **Journals:** `daybooks.list` gives id, code (`SearchKey`), name (`Heading`), type, IBAN and currency [F].
   - The daybook **type maps cleanly** to Chift `journal_type` (100→supplier_invoice, 150→supplier_refund, 200→customer_invoice, 250→customer_refund, 500/590→financial_operation, 600→miscellaneous_operation) [D, D6].
-  - Workaround because `counterpart_account` needs an account lookup, `next_document_numbers` can only be emulated, and `blocked`/`unallocated_account` don't exist [D].
+  - Workaround because `counterpart_account` needs an account lookup, `next_document_numbers` can only be emulated, and `unallocated_account` doesn't exist [D]. `blocked` has no Horus field either, so the connector derives it from the D6 table: blocked=true for daybook types without a documented posting endpoint (550, 610, 690, 700, 900, 990, 0) [A]. The type table also maps 550 Cash → financial_operation and 610/690/700 → miscellaneous_operation [A].
 - **The daybook type is the routing key of the whole connector:** "The daybook Type drives which endpoint you use to post entries" [F, Guide: Data model].
 - **Folders:** almost 1:1 with `folders.list {Mode: 0}` [F].
   - `Mode` 0 = all folders, 1 = my folders, for an accountant [F].
@@ -209,7 +209,7 @@ Each route below gives: the mapping in one sentence, the call pattern, why it ne
   - Single due date.
   - `original_document` for items carried over from the previous year is uncertain [A].
   - Foreign-currency supplier items are returned in EUR (D4).
-- **unposted_allowed** maps to Horus `Confirmed` (validated by the accountant). Invoices pushed via Chift stay invisible with `unposted_allowed=false` until the accountant confirms them. That's a good insight for a client conversation.
+- **unposted_allowed** maps to Horus `Confirmed` (validated by the accountant). With the proposed default (D12: "posted" → `Confirmed=true`), invoices pushed as posted are visible immediately. Drafts, and every invoice of a consumer using the "always push unconfirmed" option, stay invisible with `unposted_allowed=false` until the accountant confirms them in Horus. Worth explaining to clients who choose accountant review.
 
 ---
 
@@ -256,7 +256,7 @@ What I did (worth describing, since they assess *how you approach* an unfamiliar
 | D4 | Foreign-currency amounts: EUR numbers paired with USD labels | One assumption (ledger in EUR); never mix |
 | D5 | Customer open items computed with the supplier sign | Sign by side |
 
-Minor decisions: D6 (one daybook-type table), D7 (one folder rule), D8 (one analytics cache and rounding rule), D9 (one partner mapper), D10 (partner_info), D11 (verdict calibration, which **downgraded miscellaneous operations to workaround**), D12 (posted/confirmed, duplicate checks), D13 (folder check on calls by id).
+Minor decisions: D6 (one daybook-type table), D7 (one folder rule), D8 (one analytics cache and rounding rule), D9 (one partner mapper), D10 (partner_info), D11 (verdict calibration, which **downgraded miscellaneous operations to workaround**), D12 (posted/confirmed, duplicate checks), D13 (folder check on calls by id). D14 (invoice daybook selection reworded to the D1 per-type filter) and D15 (endpoint count corrected to 72 once `book-entries.info` was supplied) are internal clean-ups, so the report's appendix B lists only D1–D13, and presents them as *working assumptions* with the open question each depends on.
 
 > **Lesson to say out loud:** a connector is a *system* of routes that must round-trip. What a create route writes must be readable by the get route in the same shape. Reviewing routes in isolation misses this.
 
@@ -295,7 +295,7 @@ Minor decisions: D6 (one daybook-type table), D7 (one folder rule), D8 (one anal
 | "What if a field doesn't exist in Horus?" | Classify it as Not available, return null (or Chift's agreed default) on read, and reject or ignore-with-warning on write (decision C3). It's always listed in the attribute table. |
 | "Why is miscellaneous operation not 'supported'? It has a dedicated endpoint." | Calibration (D11): no currency field (EUR only), numeric numbers only, and a read-back when Horus numbers the entry. That loses a capability clients rely on. The core endpoint is native. |
 | "Can you post a payment matched to its invoice?" | Yes, outside this scope: `book-entries.banks.new` plus `matching` (or `MatchNo` at creation, with `matching.next-number.*`) [F, Guide: Outstanding items & matching]. A good bridge to part 2 (synchronisations). |
-| "What happens when the accountant edits an invoice we pushed?" | Horus creates a new book entry id and drops the attachment [F]. The connector reconciles on daybook + number, as Horus advises [F]. |
+| "What happens when the accountant edits an invoice we pushed?" | Horus generates a new book entry id when an invoice is updated [F, Guide: Reading accounting data]. The connector reconciles on daybook + number, as Horus advises [F]. For API updates the original attachment is also deleted [F, Guide: Posting…]; whether an edit in Horus Office keeps it is not documented [?]. |
 | "Should entries be confirmed?" | Horus's default is accountant review. Chift's default is "posted". I propose posted → confirmed with a per-consumer "always unconfirmed" option, and I'd validate the default with Chift and Horus (C1). |
 | "How confident are you?" | Chift side: high (official spec; re-check against the live docs). Horus side: high on what's documented (API reference + 15 guides). Every assumption is labelled and has a matching question. |
 | "Performance?" | The worst cases are invoice retrieval over long periods and large accounting-firm folders (full lists, no paging). Mitigate with caching, narrow windows, gzip and incremental sync, and ask Horus for limits. |

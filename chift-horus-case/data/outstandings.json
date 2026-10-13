@@ -205,7 +205,7 @@
    "chift_required": true,
    "horus_source": "POST /invoices.sales.outstanding.list → Filter.ConfirmedOnly; customers/suppliers.outstanding → AccountHistories[].Confirmed (post-filter)",
    "classification": "TRANSFORM",
-   "rule": "Horus 'Confirmed' (validated by the accountant) = Chift 'posted'. 'false' -> Filter.ConfirmedOnly=true on the sales list, plus a post-filter Confirmed==true on customers/suppliers.outstanding lines; those endpoints have no ConfirmedOnly filter and presumably include unconfirmed lines by default (D). 'true' -> no filter (ConfirmedOnly defaults to false). Entries pushed through the API, including Chift's own, stay unconfirmed until the accountant confirms them, so they appear only with 'true'. A file sent to documents.new appears only once Horus has turned it into a book entry (D).",
+   "rule": "Horus 'Confirmed' (validated by the accountant) = Chift 'posted'. 'false' -> Filter.ConfirmedOnly=true on the sales list, plus a post-filter Confirmed==true on customers/suppliers.outstanding lines; those endpoints have no ConfirmedOnly filter and presumably include unconfirmed lines by default (D). 'true' -> no filter (ConfirmedOnly defaults to false). Entries pushed through the API are unconfirmed by default in Horus. Under D12, Chift 'posted' entries are sent with Confirmed=true and appear with 'false' too; drafts and entries of consumers using the 'always push unconfirmed' option appear only with 'true' until the accountant confirms them. A file sent to documents.new appears only once Horus has turned it into a book entry (D).",
    "label": "D",
    "evidence": "Filter.ConfirmedOnly: '*FALSE* by default. Include only entries confirmed by the accountant.'; Guide: Reading accounting data: 'By default, lists include unconfirmed entries, i.e. entries not yet validated by the accountant.'; Guide: Data model: 'Entries pushed through the API are unconfirmed by default ( Confirmed: false )'; Guide: Documents & attachments: documents.new 'inserts a document that is processed automatically and transformed into a book entry'"
   },
@@ -650,7 +650,7 @@
   },
   {
    "description": "Entries pushed through the API, including invoices and payments Chift creates, are unconfirmed by default ('Entries pushed through the API are unconfirmed by default ( Confirmed: false )').",
-   "impact": "A consumer that creates an invoice and then reads outstandings with unposted_allowed=false will not see it until the accountant confirms it in Horus Office. Explain this to clients and advise unposted_allowed=true for their own pushed documents (D).",
+   "impact": "Under the proposed default (D12: 'posted' → Confirmed=true), entries Chift pushes as posted are confirmed and appear with unposted_allowed=false. Drafts, and every entry of a consumer that uses the 'always push unconfirmed' option, stay unconfirmed and appear only with unposted_allowed=true until the accountant confirms them in Horus Office. Explain this to clients who choose accountant review (D).",
    "label": "F"
   },
   {
@@ -706,8 +706,8 @@
    "label": "F"
   },
   {
-   "case": "Invoice pushed through Chift (Confirmed false by default) read back immediately.",
-   "handling": "With unposted_allowed=true it appears with posted=false and possibly number null (Number 0). With false it is absent until the accountant confirms it.",
+   "case": "Invoice pushed through Chift as a draft, or under the 'always push unconfirmed' option, read back immediately.",
+   "handling": "With unposted_allowed=true it appears with posted=false and possibly number null (Number 0). With false it is absent until the accountant confirms it. Invoices pushed as 'posted' under the default D12 mapping are confirmed and appear in both cases.",
    "label": "D"
   },
   {
