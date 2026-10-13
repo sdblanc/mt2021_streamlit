@@ -696,32 +696,32 @@
   {
    "question": "What does daybooks IsUsed mean (active, has entries, used for supplier payments?), and can a daybook be deactivated or blocked in Horus Office?",
    "for_whom": "Horus",
-   "why": "Determines whether IsUsed can drive Chift 'blocked', or whether unused daybooks should be hidden."
+   "why": "Determines whether IsUsed can drive Chift 'blocked', or whether unused daybooks should be hidden. (Consolidated as H14.)"
   },
   {
    "question": "Can a credit note (invoices.sales/purchases.new Type = 1) be posted into a Sale (200) or Purchase (100) daybook, and can an invoice (Type 0) go into a 250/150 daybook? Must refunds go to a credit-note daybook when one exists? (D1)",
    "for_whom": "Horus",
-   "why": "Validates the D1 refund fallback (250 → 200, 150 → 100) and confirms that journal_type describes the daybook, not every entry in it."
+   "why": "Validates the D1 refund fallback (250 → 200, 150 → 100) and confirms that journal_type describes the daybook, not every entry in it. (Consolidated as H2.)"
   },
   {
    "question": "Can the document Type (0 invoice / 1 credit note) be exposed on read (book-entries.list/info or account-histories.list)? (D1)",
    "for_whom": "Horus",
-   "why": "Credit notes may sit in 200/100 daybooks, so journal_type cannot classify entries. D1 relies on the partner-line sign (A) until the Type is readable."
+   "why": "Credit notes may sit in 200/100 daybooks, so journal_type cannot classify entries. D1 relies on the partner-line sign (A) until the Type is readable. (Consolidated as H2.)"
   },
   {
    "question": "Is there a way to read the next document number per daybook and fiscal year, and what is the DocumentNo/Number format (e.g. YYMM + sequence)? Do unconfirmed entries with a Number reserve that number? Could AutoGenerateNumber be added to invoices.*.new?",
    "for_whom": "Horus",
-   "why": "next_document_numbers cannot be emulated reliably, and confirmed invoices need a valid Number."
+   "why": "next_document_numbers cannot be emulated reliably, and confirmed invoices need a valid Number. (Consolidated as H3.)"
   },
   {
    "question": "Are StartMonth/StartYear/EndMonth/EndYear in book-entries.list and account-histories.list calendar months or accounting periods? Are closing/opening entries (EntryType 810/850/910) dated inside the fiscal year bounds? What does IncludeReport cover?",
    "for_whom": "Horus",
-   "why": "Correct period bounds for the next_document_numbers emulation and for ledger reads."
+   "why": "Correct period bounds for the next_document_numbers emulation and for ledger reads. (Consolidated as H10.)"
   },
   {
    "question": "How can an integrator read whether a folder is 'configured to allow currencies', and is a folder's base currency always EUR?",
    "for_whom": "Horus",
-   "why": "Needed for other_currencies_allowed and main_currency."
+   "why": "Needed for other_currencies_allowed and main_currency. (Consolidated as H4.)"
   },
   {
    "question": "Does folders.list return archived or closed folders? What does IsPrivate mean? Is the folder's enterprise number (BCE/KBO) available anywhere?",
@@ -731,12 +731,12 @@
   {
    "question": "Which HTTP status does Horus return for a FolderId the user cannot access, or for a deleted folder: 403, 404 or 400 ('references non-existing resources')? (D7)",
    "for_whom": "Horus",
-   "why": "D7 maps Horus 403 to Chift 400 'access denied for the connected Horus user (folder or action)' with the Horus Details. Any other code Horus uses for the same situation needs the same mapping."
+   "why": "D7 maps Horus 403 to Chift 400 'access denied for the connected Horus user (folder or action)' with the Horus Details. Any other code Horus uses for the same situation needs the same mapping. (Consolidated as H6.)"
   },
   {
    "question": "Can Cash (550) or TemporaryMiscOperation (610) daybooks receive entries through book-entries.financials.new or miscellaneous-operations.new? What about 690/700, and is CostMiscOperation (700) a kind of miscellaneous operation? (D6)",
    "for_whom": "Horus",
-   "why": "Decides blocked and journal_type for these types in the shared D6 table. They are currently blocked = true and mapped on assumptions; both endpoints leave DaybookId type unrestricted."
+   "why": "Decides blocked and journal_type for these types in the shared D6 table. They are currently blocked = true and mapped on assumptions; both endpoints leave DaybookId type unrestricted. (Consolidated as H14.)"
   },
   {
    "question": "Is a suspense or unallocated account configured per bank or financial daybook in Horus Office, and can it be exposed?",
@@ -746,7 +746,7 @@
   {
    "question": "Does fiscal-years.list actually return IsClosed (the Data model guide lists it as a fiscal-year attribute)? If not, could it be added?",
    "for_whom": "Horus",
-   "why": "Removes the N+1 calls on Get bookyears and lets the numbering emulation filter open years."
+   "why": "Removes the N+1 calls on Get bookyears and lets the numbering emulation filter open years. (Consolidated as H14.)"
   },
   {
    "question": "Are new daybook Type enum values considered a backwards-compatible change that can appear without notice?",
@@ -766,17 +766,17 @@
   {
    "question": "Should the Horus connector always enable the multiple-folders feature, and should the activation flow let the user pick folders.list Mode (0 vs 1) or flag 'my folders'?",
    "for_whom": "Chift",
-   "why": "Fiduciary licenses hold many folders, and Mode changes the list for accountants."
+   "why": "Fiduciary licenses hold many folders, and Mode changes the list for accountants. (Consolidated as C12.)"
   },
   {
    "question": "Confirm that FolderItem.main_currency should be ISO 4217 ('EUR'). The spec says ISO 3166-1.",
    "for_whom": "Chift",
-   "why": "Doc inconsistency; AccountingInfoOut.main_currency says ISO-4217."
+   "why": "Doc inconsistency; AccountingInfoOut.main_currency says ISO-4217. (Consolidated as C13.)"
   },
   {
    "question": "Is FolderItem addresses[].country needed on Get folders? folders.list does not return it, so filling it costs one GET /folders.info call per folder (cached). By default it is left empty.",
    "for_whom": "Chift",
-   "why": "Without the extra call the route meets the Supported definition; with it, it becomes a workaround."
+   "why": "Without the extra call the route meets the Supported definition; with it, it becomes a workaround. (Consolidated as C4.)"
   }
  ],
  "evidence_gaps": [

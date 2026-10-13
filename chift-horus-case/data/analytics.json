@@ -520,7 +520,7 @@
   },
   {
    "case": "Hierarchical sections (MasterCostSection / child CostSections) or a schema with MasterCostSchema set",
-   "handling": "Flatten the sections. Map MasterCostSchema.Id to parent_id with a caveat; return null when it points to a schema that is not returned (e.g. an excluded Free schema). Ask Horus whether 'master' means parent, and whether master sections can be posted to.",
+   "handling": "Flatten the sections. Map MasterCostSchema.Id to parent_id with a caveat; return null when it points to a schema that is not returned (e.g. an excluded Free schema). Ask Horus whether 'master' means parent, and whether master sections can be posted to (H13).",
    "label": "A"
   },
   {
@@ -588,17 +588,17 @@
   {
    "question": "What do cost-schemas.list and cost-sections.list return for a folder where WithAnalytics = false: an empty array, 400 or 403?",
    "for_whom": "Horus",
-   "why": "Decides whether the connector must pre-check WithAnalytics and how errors are mapped."
+   "why": "Decides whether the connector must pre-check WithAnalytics and how errors are mapped. (Consolidated as H13.)"
   },
   {
    "question": "Does MasterCostSchema mean a hierarchical parent (sub-dimension) or another dependency, and can it point to a Free-type schema? Does cost-sections.list return child sections (CostSections) at top level, and can master sections be used in CostLines?",
    "for_whom": "Horus",
-   "why": "Needed to fill parent_id correctly (it is set to null when it points to a schema that is not returned) and to avoid listing accounts that cannot be posted to."
+   "why": "Needed to fill parent_id correctly (it is set to null when it points to a schema that is not returned) and to avoid listing accounts that cannot be posted to. (Consolidated as H13.)"
   },
   {
    "question": "Guide: Data model says SearchKey is \"unique within the folder\", but invoices.*.new Costs[].Value is \"The search key of an existing cost section, linked to this cost schema\". Is a cost section SearchKey unique per folder or only per schema? Can accountants edit the SearchKeys of schemas and sections?",
    "for_whom": "Horus",
-   "why": "Posting references schemas and sections by SearchKey. With GUID ids (D8) posting stays unambiguous, but the answer decides how far code can be trusted alone, and edited SearchKeys would make the D8 cache stale."
+   "why": "Posting references schemas and sections by SearchKey. With GUID ids (D8) posting stays unambiguous, but the answer decides how far code can be trusted alone, and edited SearchKeys would make the D8 cache stale. (Consolidated as H7.)"
   },
   {
    "question": "Is CostHistories an array (the page text says 'a list of all cost histories'; the schema says object)? Does cost-histories.list include unconfirmed, Budget (900) and CostMiscOperation (700) daybook lines? Are there volume limits?",
@@ -608,17 +608,17 @@
   {
    "question": "Is CostHistories.Balance signed (Debit - Credit, negative for credit rows) or unsigned? account-balance.list uses an unsigned Balance plus IsDebitBalance.",
    "for_whom": "Horus",
-   "why": "The only example is a debit row (Debit 41.31, Credit null, Balance 41.31). Without the sign rule, summed balances may be wrong."
+   "why": "The only example is a debit row (Debit 41.31, Credit null, Balance 41.31). Without the sign rule, summed balances may be wrong. (Consolidated as H13.)"
   },
   {
    "question": "What do IsLocked and IsDefault mean on a cost section, and Mandatory on a cost schema? Does IsLocked=true mean the section cannot be used in CostLines? Is IsDefault the section applied when a Mandatory schema gets no value? Does posting fail when a Mandatory schema gets no value, including a Free-type schema that Chift does not fill in v1 (D8)?",
    "for_whom": "Horus",
-   "why": "Decides whether locked sections should be exposed as active=false, whether write routes must always send a value for mandatory schemas, and whether a Mandatory Free schema blocks Chift writes for that folder."
+   "why": "Decides whether locked sections should be exposed as active=false, whether write routes must always send a value for mandatory schemas, and whether a Mandatory Free schema blocks Chift writes for that folder. (Consolidated as H13.)"
   },
   {
    "question": "Is the base currency of a Horus folder always EUR, and is there a field that exposes it? Are cost-histories amounts in that folder currency?",
    "for_whom": "Horus",
-   "why": "To fill currency from a documented source instead of the D4 folder-currency assumption."
+   "why": "To fill currency from a documented source instead of the D4 folder-currency assumption. (Consolidated as H4.)"
   },
   {
    "question": "The reference documents cost-schemas.info and cost-sections.info as POST with a body Id, while the Making requests guide says .info reads use GET. Which is correct?",
@@ -628,7 +628,7 @@
   {
    "question": "Are there rate limits or concurrency limits (the N+1 calls could run in parallel)?",
    "for_whom": "Horus",
-   "why": "No rate-limit documentation is provided."
+   "why": "No rate-limit documentation is provided. (Consolidated as H5.)"
   },
   {
    "question": "cost-schemas.list and cost-sections.list have no ModifiedAfter filter, and no webhook documentation was provided. Is there any change signal (filter, event or version stamp) for cost schemas and sections?",
@@ -643,7 +643,7 @@
   {
    "question": "For balance/credit/debit when the target has no native balance per analytic account: return the default 0, null, or a value computed over the current fiscal year? Confirmed-only or all entries? What sign convention does Chift expect for balance (the spec gives no description)?",
    "for_whom": "Chift",
-   "why": "The route has no date parameters, and a default 0 is indistinguishable from a real zero balance."
+   "why": "The route has no date parameters, and a default 0 is indistinguishable from a real zero balance. (Consolidated as C4.)"
   },
   {
    "question": "For a folder without the analytics module: return an empty page or an explicit error?",

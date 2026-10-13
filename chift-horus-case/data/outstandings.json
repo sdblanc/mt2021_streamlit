@@ -6,10 +6,10 @@
    "chift_path": "/consumers/{consumer_id}/accounting/outstandings",
    "chift_name": "Get clients/suppliers outstanding items",
    "verdict": "workaround",
-   "one_line": "Client side: POST /invoices.sales.outstanding.list gives native open amounts (receivable view, sign set from TransactionType) and is joined on AccountHistory.Id with POST /customers.outstanding (or a sideloaded AccountHistory, A) for account number, MatchNo and the partner-line Comment. Supplier side: POST /suppliers.outstanding, with amount/open_amount computed as Credit − Debit (D5) and returned in EUR with rate 1 (D4). Every item takes journal_type from its daybook Type through the shared D6 table (cached POST /daybooks.list) and reference from the D3 header-comment chain; Filter.CompanyIds is omitted to read the whole folder, folder_id follows D7, and Chift emulates pagination."
+   "one_line": "Client side: POST /invoices.sales.outstanding.list gives native open amounts (receivable view; invoice and credit-note rows signed from TransactionType, payments keep the raw sign) and is joined on AccountHistory.Id with POST /customers.outstanding (or a sideloaded AccountHistory, A) for account number, MatchNo and the partner-line Comment. Supplier side: POST /suppliers.outstanding, with amount/open_amount computed as Credit − Debit (D5) and returned in EUR with rate 1 (D4). Every item takes journal_type from its daybook Type through the shared D6 table (cached POST /daybooks.list) and reference from the D3 header-comment chain; Filter.CompanyIds is omitted to read the whole folder, folder_id follows D7, and Chift emulates pagination."
   }
  ],
- "summary": "Horus documents folder-level open-item endpoints for both sides (Guide: Reading accounting data: 'Open items of customers | customers.outstanding', 'Open items of suppliers | suppliers.outstanding'), so no N+1 loop over partners is needed if Filter.CompanyIds is omitted (D: Guide: Making requests: 'omitted or null filters are ignored'; that the result is then complete and uncapped is A, H8). Call budget per request: client 2 calls, supplier 1 call, daybooks cached, plus one GET /account-histories.info per sales-list row missing from the customers.outstanding snapshot and 0 to N GET /book-entries.info calls for optional enrichment (N = distinct entries needing it, cold cache only; off by default in v1, proposal). For type=client, POST /invoices.sales.outstanding.list returns document-level open items with a native OpenAmount/OpenCurrencyAmount, a ConfirmedOnly filter, PaymentRemark and Daybook.Id, in the receivable view (invoice +, payment −); each row's sign is set from TransactionType, because no documented example shows a credit note (A). It is joined on AccountHistory.Id with one POST /customers.outstanding call for the account number, MatchNo and partner-line Comment; a sideloaded AccountHistory could replace that call (A). For type=supplier there is no purchase equivalent: POST /suppliers.outstanding returns ledger lines, so amount and open_amount are computed with the shared side-based sign rule (customer Debit − Credit, supplier Credit − Debit, positive = owed; D5). They are returned in EUR with rate 1 because ledger amounts are assumed to be in folder currency (D4, A). Every item takes journal_type from its daybook Type through the shared D6 table (cached POST /daybooks.list). reference is the left part of the header comment, read from the partner-line Comment, then RemarkCompany, then Remark (D3, A), and folder_id follows the single D7 rule. Horus documents no paging, so Chift fetches everything, filters on Confirmed, sorts and slices. Main risks: undocumented sign/currency conventions and Partially-matched semantics (which decide whether partially paid supplier invoices appear at all), item ids that change when the source entry is updated, a single due date with no readable payment method, and an uncertain original_document for carried-forward (IsReport) lines. Fallback if partially matched lines are not returned, or cannot be netted reliably: account-histories.list over a period on the supplier concentration accounts, the documented way to read unmatched lines (Guide: Outstanding items & matching: 'Unmatched lines of any account | account-histories.list with NotMatchedOnly: true'). If NotMatchedOnly also excludes partially matched lines, the call is made without it and the lines are netted per matching group (ALT-R2, A).",
+ "summary": "Horus documents folder-level open-item endpoints for both sides (Guide: Reading accounting data: 'Open items of customers | customers.outstanding', 'Open items of suppliers | suppliers.outstanding'), so no N+1 loop over partners is needed if Filter.CompanyIds is omitted (D: Guide: Making requests: 'omitted or null filters are ignored'; that the result is then complete and uncapped is A, H8). Call budget per request: client 2 calls, supplier 1 call, daybooks cached, plus one GET /account-histories.info per sales-list row missing from the customers.outstanding snapshot and 0 to N GET /book-entries.info calls for optional enrichment (N = distinct entries needing it, cold cache only; off by default in v1, proposal). For type=client, POST /invoices.sales.outstanding.list returns document-level open items with a native OpenAmount/OpenCurrencyAmount, a ConfirmedOnly filter, PaymentRemark and Daybook.Id, in the receivable view (documented example: invoice +, payment −); invoice and credit-note rows take their sign from TransactionType (0 +, 1 −), because no documented example shows a credit note (A), while payment (2) and miscellaneous (3) rows keep the raw sign (D5). It is joined on AccountHistory.Id with one POST /customers.outstanding call for the account number, MatchNo and partner-line Comment; a sideloaded AccountHistory could replace that call (A). For type=supplier there is no purchase equivalent: POST /suppliers.outstanding returns ledger lines, so amount and open_amount are computed with the shared side-based sign rule (customer Debit − Credit, supplier Credit − Debit, positive = owed; D5). They are returned in EUR with rate 1 because ledger amounts are assumed to be in folder currency (D4, A). Every item takes journal_type from its daybook Type through the shared D6 table (cached POST /daybooks.list). reference is the left part of the header comment, read from the partner-line Comment, then RemarkCompany, then Remark (D3, A), and folder_id follows the single D7 rule. Horus documents no paging, so Chift fetches everything, filters on Confirmed, sorts and slices. Main risks: undocumented sign/currency conventions and Partially-matched semantics (which decide whether partially paid supplier invoices appear at all), item ids that change when the source entry is updated, a single due date with no readable payment method, and an uncertain original_document for carried-forward (IsReport) lines. Fallback if partially matched lines are not returned, or cannot be netted reliably: account-histories.list over a period on the supplier concentration accounts, the documented way to read unmatched lines (Guide: Outstanding items & matching: 'Unmatched lines of any account | account-histories.list with NotMatchedOnly: true'). If NotMatchedOnly also excludes partially matched lines, the call is made without it and the lines are netted per matching group (ALT-R2, A).",
  "verdict": "workaround",
  "verdict_rationale": "Horus supports reading open items at folder level for customers and suppliers; the API reference and both the Reading accounting data and Outstanding items & matching guides document it. Under the shared calibration (D11: extra per-request calls, emulated pagination or lost fields mean 'workaround'), Chift's contract still cannot be served 1:1, for four reasons. (1) Each item is assembled from 2-3 endpoints: the open amount; the account number, MatchNo and Comment; and the journal id/type (D6 table). (2) Supplier amount and open_amount are computed from Debit/Credit with the D5 sign rule, because there is no purchase-side OpenAmount. (3) Pagination and total are emulated in Chift. (4) Some fields are lost or approximated. Supplier and client-fallback items of foreign-currency documents are returned in EUR with rate 1 (D4). due_dates has at most one entry and payment_method is not readable. journal_type describes the daybook, not the document (D6). reference relies on an assumed comment location (D3). original_document is uncertain, beneficiaries are outside the endpoints' scope, and item ids are only stable until the source entry is updated. The route is feasible, but it is not a simple transformation, so the verdict is 'workaround' rather than 'supported'.",
  "horus_endpoints": [
@@ -215,7 +215,7 @@
    "chift_required": true,
    "horus_source": "client: POST /invoices.sales.outstanding.list → Data[] ⨝ POST /customers.outstanding → Data.AccountHistories[]; supplier: POST /suppliers.outstanding → Data.AccountHistories[]",
    "classification": "COMPOSITE",
-   "rule": "One item per open customer/supplier ledger line (account history line). Client: one per sales-list Data[] row, minus top-level rows with OpenAmount null already listed in another row's LinkedElements[] and rows with OpenAmount == 0, plus customers.outstanding lines the sales list does not reference (A). Supplier: one per remaining open line after match-group netting. Granularity (D, to confirm with Chift): a document with several partner lines gives several items sharing number and journal_id. A line belonging to an entry already represented by a kept sales-list row is never added again.",
+   "rule": "One item per open customer/supplier ledger line (account history line). Client: one per sales-list Data[] row, minus top-level rows with OpenAmount null already listed in another row's LinkedElements[] and rows with OpenAmount == 0, plus customers.outstanding lines the sales list does not reference (A). Supplier: one per remaining open line after match-group netting. Granularity (D, to confirm with Chift, C17): a document with several partner lines gives several items sharing number and journal_id. A line belonging to an entry already represented by a kept sales-list row is never added again.",
    "label": "D",
    "evidence": "Guide: Outstanding items & matching: 'Lines that are not matched yet make up the outstanding items.'; sales list example: payment 220065 (TotalAmount -210, AccountHistory.Id 'eidhge75-...') appears in LinkedElements[] of invoice 2205002 (OpenAmount 1000 = 1210 - 210) and again as a top-level Data[] row"
   },
@@ -285,7 +285,7 @@
    "chift_required": false,
    "horus_source": "same DueDate as above",
    "classification": "COMPOSITE",
-   "rule": "[] if DueDate is null, otherwise a single element. Each ledger line carries one DueDate (F). An entry with several partner lines (instalments; possible for entries keyed in Horus Office, unconfirmed, see invoice retrieval) gives one item per line under the current granularity, each with its own single due date (D). Whether such an invoice should be one item with several due_dates is a Chift question. Do not add the cash-discount date (book-entries.list / book-entries.info CompanyDetail.DiscountDetail.DiscountDate) as an extra due date.",
+   "rule": "[] if DueDate is null, otherwise a single element. Each ledger line carries one DueDate (F). An entry with several partner lines (instalments; possible for entries keyed in Horus Office, unconfirmed, see invoice retrieval) gives one item per line under the current granularity, each with its own single due date (D). Whether such an invoice should be one item with several due_dates is a Chift question (C17). Do not add the cash-discount date (book-entries.list / book-entries.info CompanyDetail.DiscountDetail.DiscountDate) as an extra due date.",
    "label": "D",
    "evidence": "invoices.sales.new / invoices.purchases.new: single 'DueDate *: string(date-time)'; no instalment / multi-due-date structure in the 72 endpoints; POST /book-entries.list and GET /book-entries.info → CompanyDetail.DiscountDetail: DiscountDate, DiscountAmount, DiscountRate"
   },
@@ -682,7 +682,7 @@
   },
   {
    "case": "Unallocated customer payment or credit balance (top-level row with TransactionType '2: Payment' not linked to any invoice).",
-   "handling": "Whether payments not linked to any invoice appear on the sales list is undocumented ('open invoices (and/or linked payments)'). If they do: return the item with journal_type from its daybook (D6), its raw (negative) sign, and open_amount from the joined customers.outstanding line (residual, or line amount), else TotalAmount (logged). Otherwise they are picked up from customers.outstanding by the reconciliation step. Whether credit balances should be included is in the Chift question on outstanding-item granularity.",
+   "handling": "Whether payments not linked to any invoice appear on the sales list is undocumented ('open invoices (and/or linked payments)'). If they do: return the item with journal_type from its daybook (D6), its raw (negative) sign, and open_amount from the joined customers.outstanding line (residual, or line amount), else TotalAmount (logged). Otherwise they are picked up from customers.outstanding by the reconciliation step. Whether credit balances should be included is asked in C17.",
    "label": "A"
   },
   {
@@ -835,7 +835,7 @@
   {
    "question": "Direction and meaning of CurrencyRate; currency of CompanyDetail amounts. Are account-history Debit/Credit and book-entry CompanyDetail amounts always in the folder currency (EUR)? Is CurrencyRate EUR per unit of CurrencyCode, or units per EUR?",
    "for_whom": "Horus",
-   "why": "Until this is confirmed, D4 returns ledger-line amounts of foreign-currency documents in EUR with currency 'EUR' and rate 1. A confirmed rule could restore the document currency for supplier items."
+   "why": "Until this is confirmed, D4 returns ledger-line amounts of foreign-currency documents in EUR with currency 'EUR' and rate 1. A confirmed rule could restore the document currency for supplier items. (Consolidated as H4.)"
   },
   {
    "question": "What does IsReport mean exactly? Does an IsReport=true line keep the original DocumentNo, Date, DueDate and Daybook, which EntryType does its book entry have (e.g. '910: OpeningMO'), and is there any link to the prior-year account history? Can customers/suppliers.outstanding return both the prior-year line and its carry-forward line?",
@@ -855,7 +855,7 @@
   {
    "question": "On invoices.sales.outstanding.list, can Include contain 'AccountHistory' and 'Daybook'? Do Included.AccountHistories carry AccountSearchKey, MatchDetail and Comment, and Included.Daybooks carry Type? On account-histories.list, can Include 'BookEntry' return CompanyDetail.RemarkPayment?",
    "for_whom": "Horus",
-   "why": "The Sideloading guide documents the syntax and the supported endpoints but not the paths or fields. A yes would reduce the client side to one call and, on the ALT path, deliver RemarkPayment without per-entry book-entries.info calls (customers/suppliers.outstanding are not sideloadable, so the main path needs book-entries.info or book-entries.list)."
+   "why": "The Sideloading guide documents the syntax and the supported endpoints but not the paths or fields. A yes would reduce the client side to one call and, on the ALT path, deliver RemarkPayment without per-entry book-entries.info calls (customers/suppliers.outstanding are not sideloadable, so the main path needs book-entries.info or book-entries.list). (Consolidated as H15.)"
   },
   {
    "question": "On book-entries.info / book-entries.list, does CompanyDetail.RemarkPayment contain the PaymentReferences written through invoices.*.new, CompanyDetail.DueDate the invoice DueDate, and RemarkCompany the invoice-level Comment?",
@@ -865,12 +865,12 @@
   {
    "question": "Where does the invoice header Comment surface on read (partner-line Comment, RemarkCompany, Remark)?",
    "for_whom": "Horus",
-   "why": "reference is read through the D3 chain: partner-line Comment, then RemarkCompany, then Remark. The RemarkCompany step costs a book-entries.info call per entry, and none of the three fields is documented as the header Comment."
+   "why": "reference is read through the D3 chain: partner-line Comment, then RemarkCompany, then Remark. The RemarkCompany step costs a book-entries.info call per entry, and none of the three fields is documented as the header Comment. (Consolidated as H9.)"
   },
   {
    "question": "Can a credit note (Type 1) be posted into a 200/100 daybook, and an invoice into 250/150?",
    "for_whom": "Horus",
-   "why": "journal_type describes the daybook (D6). If credit notes can sit in invoice daybooks, consumers must rely on the sign (D5) to identify them, and the shared D1 rule depends on the same answer."
+   "why": "journal_type describes the daybook (D6). If credit notes can sit in invoice daybooks, consumers must rely on the sign (D5) to identify them, and the shared D1 rule depends on the same answer. (Consolidated as H2.)"
   },
   {
    "question": "Can book-entries.info take several Ids in one call, or can sideloading of BookEntry be enabled on customers/suppliers.outstanding (the Sideloading guide invites requests for other endpoints)? Which status does book-entries.info return for an entry replaced by an update?",
@@ -915,7 +915,7 @@
   {
    "question": "To confirm or verify in the test folder: Which AccountType values can customers.outstanding and suppliers.outstanding return, and do Data.SumDebit / SumCredit cover exactly the returned lines? On invoices.sales.outstanding.list, which sign do TotalAmount and OpenAmount carry for a sale credit note (TransactionType 1) and for a refund paid out to a customer? Are payments not linked to any invoice returned, and can a top-level payment row be partly allocated? With ConfirmedOnly=true, does OpenAmount still net unconfirmed linked elements?",
    "for_whom": "Horus",
-   "why": "Control totals, signs and completeness of this route. (Consolidated in section 9: H2 for the credit-note sign, and the outstanding-items verification question.)"
+   "why": "Control totals, signs and completeness of this route. (Consolidated in section 9: H2 for the credit-note sign, H23 for the rest.)"
   },
   {
    "question": "What sign convention is expected for amount/open_amount (credit notes, payments, supplier invoices)? The connector proposes D5: positive = owed (receivable for clients, payable for suppliers), with credit notes and payments negative. Chift's invoice due dates use a document view (a customer credit note positive): should outstanding items follow that view instead? In a partly matched group, oldest due date first or pro-rata?",
@@ -925,7 +925,7 @@
   {
    "question": "Should unallocated payments and credit balances be returned as outstanding items?",
    "for_whom": "Chift",
-   "why": "Unlinked payments may appear on the sales list (undocumented) and always appear as unmatched customer lines; they affect totals. (Consolidated in section 9: Chift question on outstanding-items scope.)"
+   "why": "Unlinked payments may appear on the sales list (undocumented) and always appear as unmatched customer lines; they affect totals. (Consolidated in section 9 as C17.)"
   },
   {
    "question": "Is due_dates[].amount the scheduled amount or the remaining amount per due date? Is the party's usual payment mode acceptable as a payment_method fallback?",
@@ -935,7 +935,7 @@
   {
    "question": "Is a partner-scoped matching number acceptable in matching_numbers, or should the connector prefix it (e.g. with the partner)?",
    "for_whom": "Chift",
-   "why": "Horus MatchNo is unique per company/account only, while Chift MatchingOut describes matching_number as 'Unique'. (Consolidated in section 9: Chift question on outstanding-items scope.)"
+   "why": "Horus MatchNo is unique per company/account only, while Chift MatchingOut describes matching_number as 'Unique'. (Consolidated in section 9 as C17.)"
   },
   {
    "question": "Will consumers pass outstanding item ids (Horus account history lines) to POST /accounting/matching, or invoice/journal entry ids?",
@@ -945,17 +945,17 @@
   {
    "question": "Should employee items be returned under type=supplier for connectors where that is possible?",
    "for_whom": "Chift",
-   "why": "OutstandingType has only client/supplier, while partner_id mentions employees. (Consolidated in section 9: Chift question on outstanding-items scope.)"
+   "why": "OutstandingType has only client/supplier, while partner_id mentions employees. (Consolidated in section 9 as C17.)"
   },
   {
    "question": "Should an invoice with several due dates be one outstanding item with several due_dates, or one item per instalment?",
    "for_whom": "Chift",
-   "why": "Chift defines due_dates as the list of all due dates of the outstanding; Horus has one due date per ledger line. (Consolidated in section 9: Chift question on outstanding-item granularity.)"
+   "why": "Chift defines due_dates as the list of all due dates of the outstanding; Horus has one due date per ledger line. (Consolidated in section 9 as C17.)"
   },
   {
    "question": "Must amount/open_amount be in the item currency or the folder currency, in which direction is currency_exchange_rate expressed, and is mixing currencies within one partner's items acceptable? Option (b): every item in folder currency with rate 1 until Horus answers H4.",
    "for_whom": "Chift",
-   "why": "The contract defines neither the currency of amount nor the direction of the rate. (Consolidated in section 9: Chift question on the currency of amounts on read.)"
+   "why": "The contract defines neither the currency of amount nor the direction of the rate. (Consolidated in section 9 as C16.)"
   }
  ],
  "evidence_gaps": [

@@ -122,5 +122,10 @@ def build(data_dir, out_html):
     return out_html
 
 
+PROTECTED = 'chift_horus_mapping_report.html'  # the original detailed reference: kept unchanged on purpose
+
+
 if __name__ == '__main__':
+    if os.path.basename(sys.argv[2]) == PROTECTED and '--overwrite-reference' not in sys.argv:
+        sys.exit(f'Refusing to overwrite {PROTECTED}: it is the preserved detailed reference. Write to another path.')
     print(build(sys.argv[1], sys.argv[2]))

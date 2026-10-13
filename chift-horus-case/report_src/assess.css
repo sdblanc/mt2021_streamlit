@@ -1,0 +1,38 @@
+/* Concise assessment report: feasibility levels, mapping types, evidence grid, horizontal flows, limitation cards */
+.fz { display: inline-block; font: 600 0.72rem/1.25 var(--font-sans); padding: 0.28rem 0.55rem; border-radius: 999px; border: 1px solid transparent; }
+.fz-ok { color: var(--ok); background: var(--ok-bg); }
+.fz-ass { color: var(--warn); background: var(--warn-bg); }
+.fz-conf { color: var(--bad); background: var(--bad-bg); }
+.fz-open { color: var(--unk); background: var(--unk-bg); border-style: dashed; border-color: var(--line-strong); }
+.overview .tile .fz { white-space: normal; }
+.mp { display: inline-block; font: 600 0.68rem/1 var(--font-mono); padding: 0.24rem 0.42rem; border-radius: 4px; background: var(--surface-2); white-space: nowrap; }
+.mp-direct { color: var(--ok); } .mp-transform, .mp-lookup { color: var(--accent); } .mp-generated { color: var(--warn); }
+.mp-na { color: var(--bad); } .mp-constant, .mp-chift { color: var(--muted); }
+.quad { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 0.75rem; margin: 0.75rem 0 1.25rem; }
+.quad .q { background: var(--surface); border: 1px solid var(--line); border-top-width: 4px; border-radius: var(--radius); padding: 0.75rem 0.95rem; min-width: 0; }
+.quad .q h4 { margin: 0 0 0.4rem; font-size: var(--step-0); }
+.quad .q ul { margin: 0; padding-left: 1.1rem; font-size: var(--step--1); }
+.quad .q-ok { border-top-color: var(--ok); } .quad .q-ass { border-top-color: var(--warn); } .quad .q-conf { border-top-color: var(--bad); } .quad .q-open { border-top-color: var(--line-strong); border-top-style: dashed; }
+.cols3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
+.cols3 > div { background: var(--surface-2); border-radius: var(--radius); padding: 0.6rem 0.8rem; min-width: 0; }
+.cols3 h4 { margin: 0 0 0.3rem; font-size: var(--step--1); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.cols3 ul { margin: 0; padding-left: 1rem; font-size: var(--step--1); }
+.hflow { list-style: none; margin: 0.5rem 0 1rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 0.6rem; counter-reset: hstep; }
+.hflow li { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.6rem 0.7rem 0.6rem 2.3rem; font-size: var(--step--1); min-width: 0; overflow-wrap: anywhere; }
+.hflow li::before { counter-increment: hstep; content: counter(hstep); position: absolute; left: 0.6rem; top: 0.6rem; width: 1.3rem; height: 1.3rem; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font: 700 0.7rem/1.3rem var(--font-sans); text-align: center; }
+.limit { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.8rem 1rem; margin: 0.75rem 0; }
+.limit h3 { margin: 0 0 0.5rem; font-size: var(--step-1); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.limit h3 .num { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: var(--step--1); }
+.limit dl { display: grid; grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr); gap: 0.35rem 1rem; margin: 0; font-size: var(--step--1); }
+.limit dt { color: var(--muted); font-weight: 600; }
+.limit dd { margin: 0; }
+@media (max-width: 640px) { .limit dl { grid-template-columns: minmax(0, 1fr); } .limit dt { margin-top: 0.4rem; } }
+.fieldmap.simple td.rule { min-width: 18rem; }
+.diagram-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr) auto minmax(0, 1.4fr); gap: 0.6rem; align-items: stretch; margin: 1rem 0 1.25rem; }
+.diagram-flow .box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.7rem 0.85rem; font-size: var(--step--1); min-width: 0; }
+.diagram-flow .box h4 { margin: 0 0 0.35rem; font-size: var(--step-0); }
+.diagram-flow .box ul { margin: 0; padding-left: 1rem; }
+.diagram-flow .box.mid { border-color: var(--accent); background: var(--accent-soft); }
+.diagram-flow .arrow { align-self: center; color: var(--muted); font-size: 1.4rem; }
+@media (max-width: 760px) { .diagram-flow { grid-template-columns: minmax(0, 1fr); } .diagram-flow .arrow { transform: rotate(90deg); justify-self: center; } }
+.ref-link { font-size: var(--step--1); }

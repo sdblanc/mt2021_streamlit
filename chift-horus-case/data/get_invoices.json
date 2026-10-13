@@ -32,9 +32,9 @@
   {
    "method": "GET",
    "path": "/book-entries.info",
-   "role": "One book entry by Id, with no DaybookId or month window. The response has the same fields as a book-entries.list item: Id, DocumentNo, Confirmed, Verified, EntryType, OperationType, Date, LastModifiedDate, CompanyDetail (Company ref, totals, DueDate, remarks, DiscountDetail), Folder, Daybook, Document and AccountHistories refs. Used (a) to resolve BookEntry.Id → Document.Id for the follow-up attachments route, and (b) as the header call of a single-invoice read or refresh, where Date sets the month window of the account-histories.list Filter.BookEntryId call and Daybook.Id gives the invoice type through the cached daybook map. Not used in the list path: calling it per entry after book-entries.list adds no field (N+1 with no gain). It returns no lines, VAT, currency or matching (AccountHistories are {Type, Id} refs only), and sideloading is not supported on it, so the partner needs companies.info or the cached companies.list. Cross-folder guard (D13): the connector compares Data.Folder.Id with the request's folder_id and returns 400 when they differ, because the call takes only an Id.",
+   "role": "One book entry by Id, with no DaybookId or month window. The response has the same fields as a book-entries.list item: Id, DocumentNo, Confirmed, Verified, EntryType, OperationType, Date, LastModifiedDate, CompanyDetail (Company ref, totals, DueDate, remarks, DiscountDetail), Folder, Daybook, Document and AccountHistories refs. Used (a) to resolve BookEntry.Id → Document.Id for the follow-up attachments route, and (b) as the header call of a single-invoice read or refresh, where Date sets the month window of the account-histories.list Filter.BookEntryId call and Daybook.Id gives the invoice type through the cached daybook map. Not used in a full list read: calling it per entry after book-entries.list adds no field (N+1 with no gain). In an incremental read it fetches the header of an entry whose lines changed but whose header did not come back (see updated_after). It returns no lines, VAT, currency or matching (AccountHistories are {Type, Id} refs only), and sideloading is not supported on it, so the partner needs companies.info or the cached companies.list. Cross-folder guard (D13): the connector compares Data.Folder.Id with the request's folder_id and returns 400 when they differ, because the call takes only an Id.",
    "pattern": "follow_up",
-   "cardinality": "0 in the list path; 1 per invoice on demand (single-invoice read or attachments route)",
+   "cardinality": "0 in a full list read; in an incremental (updated_after) read, 1 per changed entry whose header did not come back (A, pending H10); 1 per invoice on demand (single-invoice read or attachments route)",
    "evidence": "GET /book-entries.info: 'Get details for a specific book entry.' param[query] Id *: string; Data.Document: object|null {Type: 'Documents', Id}; Data.AccountHistories: array[object] {Type: 'AccountHistories', Id}; Guide: Reading accounting data: 'Use book-entries.info to get the full detail of one entry.'; Guide: Sideloading: 'Sideloading is currently supported on:' book-entries.list, account-histories.list, companies.list, invoices.sales.outstanding.list; GET /book-entries.info → Data.Folder: object {Type: 'Folders', Id}"
   },
   {
@@ -242,7 +242,7 @@
    "chift_required": false,
    "horus_source": "none (no pagination in any Horus list endpoint)",
    "classification": "CHIFT_INTERNAL",
-   "rule": "Fetch the full filtered set for the period, sort deterministically (Date, DaybookSearchKey, DocumentNo, Id) and return items[(page-1)*size : page*size]. Cache the set per request signature so each page does not trigger a full Horus re-read; whether Chift allows such a cache between page calls is the Chift question on caching and timeouts. A folder's cache is cleared after any write made through the connector.",
+   "rule": "Fetch the full filtered set for the period, sort deterministically (Date, DaybookSearchKey, DocumentNo, Id) and return items[(page-1)*size : page*size]. Cache the set per request signature so each page does not trigger a full Horus re-read; whether Chift allows such a cache between page calls is question C14. A folder's cache is cleared after any write made through the connector.",
    "label": "D",
    "evidence": "none: no page/limit/offset/skip parameter or total count field exists in horus_reference.txt, the guides or the raw export (grep)"
   },
@@ -452,7 +452,7 @@
    "chift_required": false,
    "horus_source": "Header comment, read in this order (D3): POST /account-histories.list → Comment (partner line); POST /book-entries.list → CompanyDetail.RemarkCompany; POST /invoices.sales.outstanding.list → Remark (open sales items)",
    "classification": "TRANSFORM",
-   "rule": "D3 convention shared with create_invoice and outstandings: create_invoice writes the header Comment as '{reference}', '{reference} | {customer_memo}' or '| {customer_memo}'. On read, take the first non-empty value of partner-line Comment, then RemarkCompany, then (open sales list) Remark, split it on the first ' | ', and return the left part as reference (null if empty). A comment without ' | ' is returned whole as reference. Label A: where the header Comment surfaces on read is undocumented (open question to Horus).",
+   "rule": "D3 convention shared with create_invoice and outstandings: create_invoice writes the header Comment as '{reference}', '{reference} | {customer_memo}' or '| {customer_memo}'. On read, take the first non-empty value of partner-line Comment, then RemarkCompany, then (open sales list) Remark, split it on the first ' | ', and return the left part as reference (null if empty). A comment without ' | ' is returned whole as reference. Label A: where the header Comment surfaces on read is undocumented (H9).",
    "label": "A",
    "evidence": "POST /invoices.sales.new → 'Comment: string|null [example=\"my global comment\"]'; POST /account-histories.list → 'Comment: string|null' (no description); POST /book-entries.list → 'RemarkCompany: string|null' (no description); POST /invoices.sales.outstanding.list → 'Remark: string|null [example=\"My invoice remark\"]'"
   },
@@ -832,7 +832,7 @@
    "chift_required": false,
    "horus_source": "none (folders have no currency field)",
    "classification": "CONSTANT",
-   "rule": "'EUR' by assumption (D4). No folder currency field exists; a null CurrencyCode means EUR on lines and invoices, and Legislation is 'BE' or 'LU'. Confirm with Horus.",
+   "rule": "'EUR' by assumption (D4). No folder currency field exists; a null CurrencyCode means EUR on lines and invoices, and Legislation is 'BE' or 'LU'. Confirm with Horus (H4).",
    "label": "A",
    "evidence": "GET /folders.info: no currency field; POST /invoices.purchases.new / Guide: Posting sales & purchase invoices: 'null means EUR. The folder must be configured to allow currencies.'"
   },
@@ -1132,7 +1132,7 @@
   },
   {
    "description": "No Horus list documents paging parameters or a total count, so lists are expected to return the full result (deduction; size limits unverified, H5).",
-   "impact": "Every Chift page re-reads the whole period from Horus unless the connector caches the result between page calls (subject to the Chift question on caching and timeouts). Large folders over long periods give heavy payloads (gzip recommended) and possible timeouts: expected to work for typical folder sizes; behaviour on large folders is unverified (H5).",
+   "impact": "Every Chift page re-reads the whole period from Horus unless the connector caches the result between page calls (subject to question C14). Large folders over long periods give heavy payloads (gzip recommended) and possible timeouts: expected to work for typical folder sizes; behaviour on large folders is unverified (H5).",
    "label": "D"
   },
   {
@@ -1477,27 +1477,27 @@
   {
    "question": "For GET /book-entries.info: what does it return for an Id that was replaced by an update or deleted (404 or the old entry)? Does the guide's 'full detail' mean anything beyond the documented header (for example lines or VAT inline)? Can sideloading (CompanyDetail.Company, AccountHistories) be enabled on it, as Guide: Sideloading invites ('If you need it on another endpoint, contact us')?",
    "for_whom": "Horus",
-   "why": "Single-invoice reads and the attachments route use book-entries.info by Id. Its documented response equals a book-entries.list item with line references only, so a single read still needs account-histories.list (with a month window) and companies.info, and the 404 behaviour decides how stale Ids are reported."
+   "why": "Single-invoice reads and the attachments route use book-entries.info by Id. Its documented response equals a book-entries.list item with line references only, so a single read still needs account-histories.list (with a month window) and companies.info, and the 404 behaviour decides how stale Ids are reported. (Consolidated as H16.)"
   },
   {
    "question": "Can a credit note (Type 1) be posted into a 200/100 daybook, and an invoice into 250/150? Is the document Type (invoice / credit note) exposed anywhere on read besides invoices.sales.outstanding.list TransactionType? Is the Type stored per entry, and can it be exposed on book-entries.list or account-histories.list for all entries? Are negative totals accepted with Type 0? Does matching change the entry Id or LastModifiedDate?",
    "for_whom": "Horus",
-   "why": "D1 classifies by daybook type, with a sign heuristic only in folders without a credit-note daybook (A); a Horus answer, or a read-side Type, would confirm or replace the rule and could halve the book-entries.list calls."
+   "why": "D1 classifies by daybook type, with a sign heuristic only in folders without a credit-note daybook (A); a Horus answer, or a read-side Type, would confirm or replace the rule and could halve the book-entries.list calls. (Consolidated as H2.)"
   },
   {
    "question": "Do StartMonth/StartYear/EndMonth/EndYear filter on AccountingMonth/AccountingYear or on Date? Is there a maximum span, a response size limit or a rate limit? Is there a practical limit for a multi-year account-histories.list on a collective account, and could Filter.CompanyId accept several ids?",
    "for_whom": "Horus",
-   "why": "Day-level date filtering, window widening and caching strategy depend on it; no rate limits are documented."
+   "why": "Day-level date filtering, window widening and caching strategy depend on it; no rate limits are documented. (Consolidated as H10 and H5.)"
   },
   {
    "question": "On book-entries.list, does Filter.ModifiedAfter apply to the entry or to its account histories (the description says 'account-histories')? Does matching or unmatching update the LastModifiedDate of the entry and/or of the partner account-history line? Is ModifiedAfter strict or inclusive, how precise is LastModifiedDate and which clock sets it? Does ModifiedAfter on account-histories.list return every line of a replaced entry?",
    "for_whom": "Horus",
-   "why": "Incremental sync passes ModifiedAfter on both lists with a small overlap; the answers decide whether newly paid invoices and every changed line are caught without a full re-read."
+   "why": "Incremental sync passes ModifiedAfter on both lists with a small overlap; the answers decide whether newly paid invoices and every changed line are caught without a full re-read. (Consolidated as H10.)"
   },
   {
    "question": "Which relationships can be sideloaded with Include on book-entries.list and account-histories.list (AccountHistories? Document? CompanyDetail.Company on lines? nested Ibans)? Do Included entities carry the full companies.list schema?",
    "for_whom": "Horus",
-   "why": "Sideloading AccountHistories could merge the header and line calls, Ibans would remove the N+1 for bank_accounts, and partial entities would force a companies.list fallback."
+   "why": "Sideloading AccountHistories could merge the header and line calls, Ibans would remove the N+1 for bank_accounts, and partial entities would force a companies.list fallback. (Consolidated as H15.)"
   },
   {
    "question": "What exactly are CompanyDetail.TotalAmount, TurnoverAmount, TaxAmount, RemarkPayment, RemarkCompany and PaymentDate (signs for credit notes, currency, mapping to the write fields)?",
@@ -1517,22 +1517,22 @@
   {
    "question": "Direction and meaning of CurrencyRate; currency of CompanyDetail amounts (and of account-history Debit/Credit). Is the folder base currency always EUR?",
    "for_whom": "Horus",
-   "why": "D4 assumes folder-currency EUR everywhere and returns EUR with currency 'EUR' when invoice-currency amounts are not available; confirmation would let foreign-currency invoices be returned in their own currency."
+   "why": "D4 assumes folder-currency EUR everywhere and returns EUR with currency 'EUR' when invoice-currency amounts are not available; confirmation would let foreign-currency invoices be returned in their own currency. (Consolidated as H4.)"
   },
   {
    "question": "Is there any way to detect deleted or replaced book entries (tombstones, webhooks)? Guide: Changes & versioning mentions webhook types, but no webhook documentation was provided.",
    "for_whom": "Horus",
-   "why": "Without it, consumers cannot remove stale invoices on an incremental sync."
+   "why": "Without it, consumers cannot remove stale invoices on an incremental sync. (Consolidated as H10.)"
   },
   {
    "question": "What do CustomerActivitySuspended (companies) and IsUsed (daybooks) mean exactly?",
    "for_whom": "Horus",
-   "why": "The shared partner mapper (D9) uses active = NOT CustomerActivitySuspended (A), and IsUsed decides whether unused daybooks can safely be skipped."
+   "why": "The shared partner mapper (D9) uses active = NOT CustomerActivitySuspended (A), and IsUsed decides whether unused daybooks can safely be skipped. (Consolidated as H11 and H14.)"
   },
   {
    "question": "Should unconfirmed Horus entries (Confirmed=false, accountant review pending) be returned as status 'draft', or excluded by default?",
    "for_whom": "Chift",
-   "why": "API-pushed entries are unconfirmed by default, so this changes what consumers see right after they create an invoice."
+   "why": "API-pushed entries are unconfirmed by default, so this changes what consumers see right after they create an invoice. (Consolidated as C10.)"
   },
   {
    "question": "If the document type cannot be read, which misclassification is more acceptable: a credit note keyed into a sales daybook returned as an invoice (daybook first, proposed), or a negative invoice returned as a refund (sign first)? Can a customer_invoice carry a credit-direction total in your model? Should refund amounts be returned positive? Is 'paid' acceptable for an invoice fully offset by a credit note?",
@@ -1552,32 +1552,32 @@
   {
    "question": "What default period applies when date_from/date_to are absent, given that Horus requires a month window and has no pagination? How far back should the payment search start (advance payments)? How far back must an updated_after poll look, and are consumers expected to dedupe items re-delivered by a safety overlap?",
    "for_whom": "Chift",
-   "why": "It drives cost and latency; a full-history scan per page request is unrealistic. Proposal: from the start of the current fiscal year."
+   "why": "It drives cost and latency; a full-history scan per page request is unrealistic. Proposal: from the start of the current fiscal year. (Consolidated as C11.)"
   },
   {
    "question": "How should approval_status (filter and field) behave for a target without an approval workflow: always 'unknown' and reject the filter, or map Verified to 'approved'?",
    "for_whom": "Chift",
-   "why": "Horus has only an optional Verified flag. (Consolidated in section 9: Chift question on filters that cannot be honoured exactly.)"
+   "why": "Horus has only an optional Verified flag. (Consolidated in section 9 as C18.)"
   },
   {
    "question": "Where does the invoice header Comment surface on read (partner-line Comment, RemarkCompany, Remark)?",
    "for_whom": "Horus",
-   "why": "D3 reads reference and customer_memo by splitting the header Comment; the read order (partner-line Comment, then RemarkCompany, then the sales Remark) is an assumption until Horus answers."
+   "why": "D3 reads reference and customer_memo by splitting the header Comment; the read order (partner-line Comment, then RemarkCompany, then the sales Remark) is an assumption until Horus answers. (Consolidated as H9.)"
   },
   {
    "question": "Can TaxKind be exposed on read (in account-histories VatDetail)? What does the read-only TaxCondition value '4 = Article' correspond to on write? If VatDetail.VatCode identifies one accepted combination (TaxKind included), could it disambiguate TaxKind on read?",
    "for_whom": "Horus",
-   "why": "Without TaxKind several purchase VAT codes can match the same VatDetail, so D2 returns tax_code = null; TaxCondition 4 has no write-side equivalent and never matches the catalogue."
+   "why": "Without TaxKind several purchase VAT codes can match the same VatDetail, so D2 returns tax_code = null; TaxCondition 4 has no write-side equivalent and never matches the catalogue. (Consolidated as H1.)"
   },
   {
    "question": "Is omitting Free-schema analytics (CostSectionType 900) from invoice lines acceptable in v1, or should a later version expose them (for example with a documented 'schemaId|value' id)? For a plan that covers only part of a line, should the connector leave it out (proposed) or return a partial distribution? Is a read-back split that differs from the one sent on small lines acceptable (0.10 sent as 33/33/34 reads back as 30/30/40)?",
    "for_whom": "Chift",
-   "why": "D8 excludes Free schemas from Chift analytics, so their cost lines are dropped from analytic_distribution with only a connector warning."
+   "why": "D8 excludes Free schemas from Chift analytics, so their cost lines are dropped from analytic_distribution with only a connector warning. (Consolidated as C9.)"
   },
   {
    "question": "For foreign-currency sales invoices, should the connector use the invoice-currency amounts while the item is open (they disappear from Horus once it is closed), or always return a stable EUR representation? For purchases, whose original-currency amounts are never readable, is 'EUR amounts labelled EUR' acceptable? A later option, once H4 gives the rate direction, is the real currency code with amounts converted through CurrencyRate.",
    "for_whom": "Chift",
-   "why": "Under D4 the same invoice can switch from its own currency to EUR between two syncs, which may confuse consumers that compare amounts. (Consolidated in section 9: Chift question on the currency representation of invoices on read.)"
+   "why": "Under D4 the same invoice can switch from its own currency to EUR between two syncs, which may confuse consumers that compare amounts. (Consolidated in section 9 as C16.)"
   }
  ],
  "evidence_gaps": [

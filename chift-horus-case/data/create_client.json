@@ -945,7 +945,7 @@
    "chift_required": false,
    "horus_source": "Horus HTTP status + error body ErrorType",
    "classification": "TRANSFORM",
-   "rule": "Field-format failures found by the connector (vat, country, IBAN checksum, company_id if rejected rather than ignored) → 422 before any Horus call, with ERROR_INVALID_VAT_FORMAT, ERROR_INVALID_FIELD_FORMAT_COMPANY_ID, or a connector code for the others (per the Chift question on error conventions). Unknown or not-allowed references (unknown or inactive account_number, unknown force_merge, folder not selected) → 400. A duplicate found by the pre-check, or a Horus 400 caused by a duplicate VAT number → 400 ERROR_PARTNER_ALREADY_EXISTS. A Horus 400 caused by a SearchKey conflict → regenerate the key once and retry, never ERROR_PARTNER_ALREADY_EXISTS. Other Horus 400 → 400 with Details. Horus 403 → 400 'access denied for the connected Horus user (folder or action)' with Details. Horus 404 (unknown force_merge) → 400. Horus 401 is handled internally (refresh once + replay); Horus 500 follows the best-effort check-before-retry rule. Horus documents only 'not_found' as an ErrorType, so the mapping of codes is partial (?).",
+   "rule": "Field-format failures found by the connector (vat, country, IBAN checksum, company_id if rejected rather than ignored) → 422 before any Horus call, with ERROR_INVALID_VAT_FORMAT, ERROR_INVALID_FIELD_FORMAT_COMPANY_ID, or a connector code for the others (per question C20). Unknown or not-allowed references (unknown or inactive account_number, unknown force_merge, folder not selected) → 400. A duplicate found by the pre-check, or a Horus 400 caused by a duplicate VAT number → 400 ERROR_PARTNER_ALREADY_EXISTS. A Horus 400 caused by a SearchKey conflict → regenerate the key once and retry, never ERROR_PARTNER_ALREADY_EXISTS. Other Horus 400 → 400 with Details. Horus 403 → 400 'access denied for the connected Horus user (folder or action)' with Details. Horus 404 (unknown force_merge) → 400. Horus 401 is handled internally (refresh once + replay); Horus 500 follows the best-effort check-before-retry rule. Horus documents only 'not_found' as an ErrorType, so the mapping of codes is partial (?).",
    "label": "D",
    "evidence": "Chift spec RESPONSE 400 examples → \"error_code\": \"ERROR_PARTNER_ALREADY_EXISTS\"; RESPONSE 422 → \"ERROR_INVALID_VAT_FORMAT\", \"ERROR_INVALID_FIELD_FORMAT_COMPANY_ID\"; Guide: Responses & errors → \"ErrorType Machine-readable error category. Use it in your code.\""
   },
@@ -1095,7 +1095,7 @@
   },
   {
    "description": "Pagination, page size and rate limits are not documented in the API reference or the guides. Making requests covers naming, headers, filters, dates, partial updates and gzip only, and no list endpoint has page parameters.",
-   "impact": "The connector assumes lists return every match (A); short SearchKey candidates may return large sets. Each Chift create costs about 3-7 calls with no known quota. Ask Horus.",
+   "impact": "The connector assumes lists return every match (A); short SearchKey candidates may return large sets. Each Chift create costs about 3-7 calls with no known quota. Ask Horus (H5).",
    "label": "?"
   },
   {
@@ -1280,17 +1280,17 @@
   {
    "question": "Company SearchKey: what are the max length, the allowed characters and the case sensitivity? Does Horus generate a key when it is empty, and which ErrorType/Details does companies.new return for a duplicate SearchKey?",
    "for_whom": "Horus",
-   "why": "SearchKey is required and has no Chift source. Uniqueness within the folder is documented; the rest is not, and a wrong generation rule causes 400s."
+   "why": "SearchKey is required and has no Chift source. Uniqueness within the folder is documented; the rest is not, and a wrong generation rule causes 400s. (Consolidated as H7.)"
   },
   {
    "question": "Which ErrorType values does companies.new return for validation failures: duplicate VAT, duplicate SearchKey, invalid IBAN, unknown or inactive concentration account, invalid LanguageCode/CountryCode?",
    "for_whom": "Horus",
-   "why": "Turns generic Horus 400s into actionable Chift errors (e.g. ERROR_PARTNER_ALREADY_EXISTS), decides when a SearchKey retry is allowed, and could make some pre-checks optional."
+   "why": "Turns generic Horus 400s into actionable Chift errors (e.g. ERROR_PARTNER_ALREADY_EXISTS), decides when a SearchKey retry is allowed, and could make some pre-checks optional. (Consolidated as H6.)"
   },
   {
    "question": "Is the duplicate-VAT check per folder or per license? Does Horus normalise VAT numbers (case, spaces, dots) before storing and comparing them?",
    "for_whom": "Horus",
-   "why": "Drives the pre-check design: the equals pre-check misses a duplicate stored in another format. Companies belong to a folder, so a per-folder check is likely (D), but it is not stated."
+   "why": "Drives the pre-check design: the equals pre-check misses a duplicate stored in another format. Companies belong to a folder, so a per-folder check is likely (D), but it is not stated. (Consolidated as H25.)"
   },
   {
    "question": "Which LanguageCode values does companies.new accept, and what does 'XX' mean, given that the company enum lists both 'EN' and 'XX' and countries.list labels CountryNameXx as English?",
@@ -1305,7 +1305,7 @@
   {
    "question": "How is a company's enterprise (local business) number written: VatNumber with IsVatLiable=false? Can it be stored for VAT-liable companies?",
    "for_whom": "Horus",
-   "why": "Guide: Data model says companies are identified by 'a VAT number and/or a local business number', and companies.info returns EnterpriseNumber, but companies.new/update have no such field."
+   "why": "Guide: Data model says companies are identified by 'a VAT number and/or a local business number', and companies.info returns EnterpriseNumber, but companies.new/update have no such field. (Consolidated as H11.)"
   },
   {
    "question": "Can a company's CurrencyCode be set via the API?",
@@ -1315,87 +1315,87 @@
   {
    "question": "What does CustomerActivitySuspended mean, and is there an 'inactive' flag for companies?",
    "for_whom": "Horus",
-   "why": "Needed to map Chift active: the shared mapper reads active = NOT CustomerActivitySuspended (D9) and stays an assumption until Horus confirms."
+   "why": "Needed to map Chift active: the shared mapper reads active = NOT CustomerActivitySuspended (D9) and stays an assumption until Horus confirms. (Consolidated as H11.)"
   },
   {
    "question": "Is companies.new atomic with its Ibans array (an invalid IBAN means no company is created)? Are duplicate IBANs across companies refused?",
    "for_whom": "Horus",
-   "why": "Decides whether to send IBANs inline or after creation via ibans.new, and whether an IBAN pre-check is needed."
+   "why": "Decides whether to send IBANs inline or after creation via ibans.new, and whether an IBAN pre-check is needed. (Consolidated as H25.)"
   },
   {
    "question": "Which CustomerConcentrationAccount is applied when it is omitted (folder setting? 400000?), must it be a collective (IntCategory COLLECCUS) account, and can a dedicated per-customer account created with accounts.new be used?",
    "for_whom": "Horus",
-   "why": "The guide implies a default exists ('optional … set explicitly'). The answer defines the semantics of account_number, the validation rule, and whether accounts.new is ever needed."
+   "why": "The guide implies a default exists ('optional … set explicitly'). The answer defines the semantics of account_number, the validation rule, and whether accounts.new is ever needed. (Consolidated as H11.)"
   },
   {
    "question": "What do Name2, Address2, Family and ContactPerson mean, and what are the field length limits?",
    "for_whom": "Horus",
-   "why": "Needed to place box, address name, person names and long names without truncation."
+   "why": "Needed to place box, address name, person names and long names without truncation. (Consolidated as H11.)"
   },
   {
    "question": "Which relationship paths can be included on companies.list (MainIban, Ibans, CustomerConcentrationAccount), and which fields do the Included Ibans/Accounts entities carry (Iban/Bic? SearchKey?)?",
    "for_whom": "Horus",
-   "why": "If supported, the read-back shrinks from two or three calls to one."
+   "why": "If supported, the read-back shrinks from two or three calls to one. (Consolidated as H15.)"
   },
   {
    "question": "Do pagination, a maximum page size or rate limits apply to companies.list / accounts.list and per license?",
    "for_whom": "Horus",
-   "why": "Neither the reference nor the guides mention them. They affect pre-check completeness and the call budget per create."
+   "why": "Neither the reference nor the guides mention them. They affect pre-check completeness and the call budget per create. (Consolidated as H5.)"
   },
   {
    "question": "Can Horus provide a test license or test folder for connector QA, and can test companies be deleted (no companies.delete in the API)?",
    "for_whom": "Horus",
-   "why": "Guide: Testing the API says requests run against the license's real database."
+   "why": "Guide: Testing the API says requests run against the license's real database. (Consolidated as H17.)"
   },
   {
    "question": "force_merge policy: on merge, which supplier fields may be overwritten with client data (name, address, contacts, VAT), or only IsCustomer and customer-specific fields? May force_merge target a beneficiary-only or flagless company? What should happen when the client's external_reference differs from the supplier's existing one (overwrite, keep with a warning, refuse)? Should an id that is not a supplier fall back to a normal create?",
    "for_whom": "Chift",
-   "why": "companies.update overwrites what is sent. The business rule must match other Chift connectors."
+   "why": "companies.update overwrites what is sent. The business rule must match other Chift connectors. (Consolidated as C6.)"
   },
   {
    "question": "On a duplicate VAT/external_reference, should the connector return 400 ERROR_PARTNER_ALREADY_EXISTS or the existing client?",
    "for_whom": "Chift",
-   "why": "The unified API should behave consistently across connectors."
+   "why": "The unified API should behave consistently across connectors. (Consolidated as C6.)"
   },
   {
    "question": "Can the connector return warnings for dropped or non-round-tripped data (extra addresses, mobile, notes, currency, the company number of VAT-liable clients, is_company=false, which D9 always returns as true, and a language that falls back to the folder language)?",
    "for_whom": "Chift",
-   "why": "Several fields are lost. D9 fixes is_company = true and 'XX' → null across routes, but callers still need a transparent contract."
+   "why": "Several fields are lost. D9 fixes is_company = true and 'XX' → null across routes, but callers still need a transparent contract. (Consolidated as C3.)"
   },
   {
    "question": "How should the Horus third-party code (search key) of a new company be generated: from the name (proposed), from external_reference, a per-consumer prefix and sequence, or supplied by the consumer? When a client has neither vat nor external_reference and a company with the same name exists, should the connector create a second record, warn, or refuse?",
    "for_whom": "Chift",
-   "why": "Accountants often have coding conventions for third-party codes (background). create_invoice uses partner_info.account_number as the search key as sent (D10), so a partner lookup finds only companies whose search key follows the same convention."
+   "why": "Accountants often have coding conventions for third-party codes (background). create_invoice uses partner_info.account_number as the search key as sent (D10), so a partner lookup finds only companies whose search key follows the same convention. (Consolidated as C8.)"
   },
   {
    "question": "For a FolderId the user cannot access, or a company/account Id that belongs to another folder of the license, does Horus return 403, 404 or 400? Are Id-only calls (companies.info, ibans.list, companies.update) restricted to a folder server-side?",
    "for_whom": "Horus",
-   "why": "D7 maps Horus 403 to Chift 400 'access denied for the connected Horus user (folder or action)', and D13 adds a connector-side Folder.Id check because the .info/.update calls take only a GUID. The answer confirms the error mapping and how much the guard protects."
+   "why": "D7 maps Horus 403 to Chift 400 'access denied for the connected Horus user (folder or action)', and D13 adds a connector-side Folder.Id check because the .info/.update calls take only a GUID. The answer confirms the error mapping and how much the guard protects. (Consolidated as H6.)"
   },
   {
    "question": "Can a companies.new request that timed out on the client side still be committed afterwards? Is a new company returned by companies.list as soon as the create call has returned?",
    "for_whom": "Horus",
-   "why": "The check-before-retry after a timeout or 500 is safe only if both hold; the docs give only the generic advice to retry 500s with exponential backoff."
+   "why": "The check-before-retry after a timeout or 500 is safe only if both hold; the docs give only the generic advice to retry 500s with exponential backoff. (Consolidated as H3.)"
   },
   {
    "question": "Does companies.update refuse a VatNumber already used by another company? It has no AllowDuplicateVatNumber field.",
    "for_whom": "Horus",
-   "why": "Decides whether a merge may write the client's VAT number onto a supplier without one."
+   "why": "Decides whether a merge may write the client's VAT number onto a supplier without one. (Consolidated as H25.)"
   },
   {
    "question": "Should a VAT number containing dots or spaces be normalised or rejected with ERROR_INVALID_VAT_FORMAT, as its message suggests? For validation errors without a predefined error_code (unknown country, invalid IBAN, unknown or inactive account), which status (400 or 422) and error_code do other connectors return?",
    "for_whom": "Chift",
-   "why": "Chift’s examples use 422 for field formats and 400 for duplicates; the connector follows that split until Chift confirms."
+   "why": "Chift’s examples use 422 for field formats and 400 for duplicates; the connector follows that split until Chift confirms. (Consolidated as C20.)"
   },
   {
    "question": "Are companies.new PhoneNumber, Website and ContactPerson returned by companies.info as ContactPhone, ContactWebsite and ContactName? Is EnterpriseNumber ever returned for a VAT-liable company?",
    "for_whom": "Horus",
-   "why": "The pairings are deduced from field names; they decide what the create response returns."
+   "why": "The pairings are deduced from field names; they decide what the create response returns. (Consolidated as H25.)"
   },
   {
    "question": "When several addresses are sent, which one becomes the single Horus address: main (proposed) or invoice? Is company_number = null acceptable for VAT-liable clients?",
    "for_whom": "Chift",
-   "why": "Horus keeps one address per company and returns EnterpriseNumber only for non-VAT-liable companies."
+   "why": "Horus keeps one address per company and returns EnterpriseNumber only for non-VAT-liable companies. (Consolidated as C3.)"
   }
  ],
  "evidence_gaps": [
@@ -1429,8 +1429,8 @@
   "IBANs: prefer the inline Ibans array in companies.new (one call, BIC auto-filled). ibans.new is only for an existing company (the force_merge path), because companies.update cannot change IBANs. The primary account is identified on read by comparing the ibans.list Id with companies.info MainIban.Id.",
   "Data loss to disclose upfront: one address only; no mobile, notes, currency, person fields or non-IBAN accounts; the company number of VAT-liable clients; is_company not persisted (always returned as true, D9); active only via an unconfirmed field. This is why the verdict is 'workaround' (D11) even though the core create is native.",
   "Never send empty strings on companies.update: Horus treats \"\" as 'erase' (Guide: Making requests, partial updates), so a careless merge would wipe the supplier's existing data.",
-  "Create client is a prerequisite for invoices: Guide: Posting sales & purchase invoices requires 'the CompanyId of the customer or supplier, found or created as described in Managing customers & suppliers'. A reliable response.id, with no duplicates, is therefore critical for the downstream invoice routes. create_invoice also reuses this route's required-field rules and its force_merge logic (companies.update setting the missing role flag, never \"\") when it must find or create the partner (D10), so these rules belong in one shared component. The search key differs: create_invoice uses the consumer's own code as sent, so reusing a company found under that code is legitimate there, whereas Create client derives the key from the name and treats a collision as a homonym.",
-  "Testing: writes hit the license's real database and companies cannot be deleted through the API, so Chift should ask Horus for a test license or folder before building QA for this route.",
+  "Create client is a prerequisite for invoices: Guide: Posting sales & purchase invoices requires 'the CompanyId of the customer or supplier, found or created as described in Managing customers & suppliers'. A reliable response.id, with no duplicates, is therefore critical for the downstream invoice routes. create_invoice also reuses this route's required-field rules and its force_merge logic (companies.update setting the missing role flag, never \"\"; on invoice creation only as a Chift opt-in, the default being 422) when it must find or create the partner (D10), so these rules belong in one shared component. The search key differs: create_invoice uses the consumer's own code as sent, so reusing a company found under that code is legitimate there, whereas Create client derives the key from the name and treats a collision as a homonym.",
+  "Testing: writes hit the license's real database and companies cannot be deleted through the API, so Chift should ask Horus for a test license or folder before building QA for this route (H17).",
   "One shared partner mapper (D9): Create client, get_invoices and create_invoice must return the same partner for the same Horus company: active = NOT CustomerActivitySuspended (A), one 'main' address, root phone/email (ContactPhone/ContactEmail), is_company = true, language lowercase with 'XX' → null, third_party_account = SearchKey, account_number = concentration account SearchKey. Implementing it once keeps the routes consistent and explains to a client why is_company=false or a language like 'it' does not round-trip.",
   "Folder isolation is the connector's job (D13): Horus .info and .update calls take only a GUID, and one license connection can see several folders. So companies.info and accounts.info responses are checked on Data.Folder.Id before use, and the Id-only companies.update and ibans.* calls are made only for a company that passed this check.",
   "folder_id (D7): optional in the Chift contract but \"Required when the multiple folders feature is enabled\". The connector uses the activation selection first and falls back to folders.list Mode 0 only when no selection is stored; anything ambiguous is a 400 'folder_id required', never a guess."

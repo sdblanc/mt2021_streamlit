@@ -41,7 +41,7 @@
    "path": "/accounts.list",
    "role": "Chart: source list of the folder's accounts, fetched in full (no Filter) and cached per folder. classes is applied in the connector, or sent as SearchKeys when not caching. Create: duplicate check on number before accounts.new.",
    "pattern": "primary",
-   "cardinality": "Chart: 1 per folder per cache refresh, returns the full list with no paging. Create: 1 per call (fresh, uncached) for the duplicate check.",
+   "cardinality": "Chart: 1 per folder per cache refresh; no paging parameter, so expected to return the full list (deduction, H5). Create: 1 per call (fresh, uncached) for the duplicate check.",
    "evidence": "POST /accounts.list PAGE TEXT: 'Get a list of accounts by folder.' Filter.SearchKeys: 'Filters on search keys matching the *starts with* clause'. Filter.Heading: 'Filters on headings'. Response fields: Id, Inactive, InactiveSince, SearchKey, Heading, AlternateHeading, IsSummary, IsInterCompany, IsMatchable, VatRate, VatNat, IntCategory ('Internal category'), AccountCategory, AccountSubCategory, AccountProcessType ... No page/size/ModifiedAfter/IncludeInactive parameter. Guide: Reading accounting data: 'Reference data changes rarely. Load it once and cache it per folder' ... 'Chart of accounts accounts.list'. Guide: Making requests: 'omitted or null filters are ignored.'"
   },
   {
@@ -283,7 +283,7 @@
    "chift_required": false,
    "horus_source": "none",
    "classification": "CHIFT_INTERNAL",
-   "rule": "[Chart] Emulated. Horus accounts.list returns the full list, so slice in the connector after sorting by SearchKey and filtering by classes and type.",
+   "rule": "[Chart] Emulated. Horus accounts.list documents no paging parameter, so it is expected to return the full list (deduction; size limits unverified, H5); slice in the connector after sorting by SearchKey and filtering by classes and type.",
    "label": "D",
    "evidence": "POST /accounts.list body has only 'FolderId *' and 'Filter' (SearchKeys, Heading); no page/size parameter is documented"
   },
@@ -323,7 +323,7 @@
    "chift_required": false,
    "horus_source": "POST /accounts.list (all) + POST /daybooks.list → ConcentrationAccount (+ optional companies.list, account-histories.list / customers.outstanding / suppliers.outstanding → AccountType)",
    "classification": "COMPOSITE",
-   "rule": "[Chart] Emulated filter: compute the type of every account with the response.items[].type cascade and keep the accounts whose computed type equals the filter (one definition for the field and the filter). Allowed values are only bank, cash, income, expense, other_expense and vat. type=vat and type=cash are best effort, because no account-level Horus field marks VAT or cash accounts. When the request asks for vat or cash, the connector also loads the line-level AccountType map (account-histories.list over the current and previous fiscal year, one call per folder, cached), so accounts with movements are typed by '400: VAT' / '500: Cash' (D). Accounts without movements depend on the BE prefix fallback (A); in LU folders, unused VAT and cash accounts cannot be typed. How an inexact filter is reported follows Chift's answer to the question on filters the target cannot honour.",
+   "rule": "[Chart] Emulated filter: compute the type of every account with the response.items[].type cascade and keep the accounts whose computed type equals the filter (one definition for the field and the filter). Allowed values are only bank, cash, income, expense, other_expense and vat. type=vat and type=cash are best effort, because no account-level Horus field marks VAT or cash accounts. When the request asks for vat or cash, the connector also loads the line-level AccountType map (account-histories.list over the current and previous fiscal year, one call per folder, cached), so accounts with movements are typed by '400: VAT' / '500: Cash' (D). Accounts without movements depend on the BE prefix fallback (A); in LU folders, unused VAT and cash accounts cannot be typed. How an inexact filter is reported follows Chift's answer to question C18.",
    "label": "A",
    "evidence": "Chift AccountTypeFilter enum ['bank','cash','income','expense','other_expense','vat']; POST /accounts.list Filter has only SearchKeys and Heading (no category filter)"
   },
@@ -640,7 +640,7 @@
   },
   {
    "case": "type=vat or type=cash filter",
-   "handling": "Best effort. Load the line-level AccountType map once per folder (account-histories.list over the current and previous fiscal year, cached), so accounts with movements are typed by '400: VAT' / '500: Cash'. Accounts without movements depend on the BE prefix fallback; in LU folders they are not found. How an inexact filter is reported follows Chift's answer to the question on filters the target cannot honour.",
+   "handling": "Best effort. Load the line-level AccountType map once per folder (account-histories.list over the current and previous fiscal year, cached), so accounts with movements are typed by '400: VAT' / '500: Cash'. Accounts without movements depend on the BE prefix fallback; in LU folders they are not found. How an inexact filter is reported follows Chift's answer to question C18.",
    "label": "A"
   },
   {
@@ -663,7 +663,7 @@
   {
    "question": "What is the full list of IntCategory values (only 'COLLECCUS' is documented)? In particular, which codes mark the supplier collective, VAT recoverable/payable, bank and cash accounts? Is AccountCategory always filled for balance-sheet accounts?",
    "for_whom": "Horus",
-   "why": "IntCategory would be the most reliable account-level source for receivable, payable, vat, bank and cash. Without it, accounts without movements fall back to number-prefix heuristics."
+   "why": "IntCategory would be the most reliable account-level source for receivable, payable, vat, bank and cash. Without it, accounts without movements fall back to number-prefix heuristics. (Consolidated as H12.)"
   },
   {
    "question": "Is the line-level AccountType on account-history lines derived from the account itself (so stable for a given account), and does '500: Cash' cover all treasury accounts (bank included) or only cash accounts?",
@@ -678,17 +678,17 @@
   {
    "question": "Does accounts.list include inactive accounts by default? It has no IncludeInactive filter, unlike cost-sections.list.",
    "for_whom": "Horus",
-   "why": "The duplicate check and the completeness of the chart (active=false items) depend on it."
+   "why": "The duplicate check and the completeness of the chart (active=false items) depend on it. (Consolidated as H12.)"
   },
   {
    "question": "Does accounts.new set AccountCategory/AccountSubCategory/IntCategory automatically from the SearchKey (e.g. a PCMN template), and can a category be set through the API at all?",
    "for_whom": "Horus",
-   "why": "Decides whether the Chift type can be honoured on create, and what type a freshly created account will report."
+   "why": "Decides whether the Chift type can be honoured on create, and what type a freshly created account will report. (Consolidated as H12.)"
   },
   {
    "question": "What are the SearchKey rules (numeric only? fixed length such as 6 digits? allowed classes per Legislation BE/LU?), and what error (ErrorType) is returned on a duplicate?",
    "for_whom": "Horus",
-   "why": "To validate before creating (accounts cannot be renumbered or deleted through the API) and to translate errors cleanly."
+   "why": "To validate before creating (accounts cannot be renumbered or deleted through the API) and to translate errors cleanly. (Consolidated as H7.)"
   },
   {
    "question": "Are several values in accounts.list Filter.SearchKeys OR-ed?",
@@ -698,12 +698,12 @@
   {
    "question": "What does IsSummary mean, and does accounts.list return non-postable 'title' accounts (as account-balance.list does with IncludeTitle)?",
    "for_whom": "Horus",
-   "why": "Affects which items appear in the Chift chart and whether they should be reported as active."
+   "why": "Affects which items appear in the Chift chart and whether they should be reported as active. (Consolidated as H12.)"
   },
   {
    "question": "Does accounts.list have any size limit, implicit paging or rate limit?",
    "for_whom": "Horus",
-   "why": "The connector fetches the full list per folder (or caches it)."
+   "why": "The connector fetches the full list per folder (or caches it). (Consolidated as H5.)"
   },
   {
    "question": "What do VatRate and VatNat on an account mean?",
@@ -748,7 +748,7 @@
   {
    "question": "Does Chift core retry create calls automatically after a 5xx or timeout? May a ledger-account response be built from the request (number, name, active = true, type computed or null) when the read-back fails?",
    "for_whom": "Chift",
-   "why": "After a successful accounts.new the connector returns the account rather than an error, so that a retry does not hit 'account number already exists'."
+   "why": "After a successful accounts.new the connector returns the account rather than an error, so that a retry does not hit 'account number already exists'. (Consolidated as C20.)"
   },
   {
    "question": "Is GET /accounts.info immediately consistent after accounts.new returns its Id?",
