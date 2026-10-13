@@ -483,7 +483,7 @@
   },
   {
    "description": "accounts.list has no pagination and no category filter.",
-   "impact": "Each Chift page needs the full list (cache per folder, as the guide recommends). The type filter, total and paging are emulated in the connector; this is expected to be fine for typical chart sizes; behaviour on very large charts is unverified (H5).",
+   "impact": "Each Chift page needs the full list (cache per folder, as the guide recommends). The type filter, total and paging are emulated in the connector. This is expected to be fine for typical chart sizes; behaviour on very large charts is unverified (H5).",
    "label": "D"
   },
   {
@@ -801,7 +801,9 @@
   "D6: the daybooks.list role now says daybook Type codes are read with the shared Type table, and that here they type the concentration account, not the journal. The 550 branch keeps its '?' label, consistent with D6 marking 550 as having no documented posting endpoint.",
   "D9: the number = SearchKey ba_insight now notes that the same per-folder chart cache resolves CustomerConcentrationAccount / SupplierConcentrationAccount to the SearchKey for the shared partner mapper's account_number.",
   "Updated both chift_routes one_lines (D7 folder resolution; D13 check on the Create read-back) and the summary (D7 rule, D13 guard, D15 count, D11 calibration).",
-  "No change needed for D1, D2, D3, D4, D5, D8, D10 and D14. They cover invoices, VAT codes, outstanding items, analytics and partners. cost-sections.list stays 'not used' for this route, independent of the D8 Free-schema policy. Every other row is kept unchanged."
+  "No change needed for D1, D2, D3, D4, D5, D8, D10 and D14. They cover invoices, VAT codes, outstanding items, analytics and partners. cost-sections.list stays 'not used' for this route, independent of the D8 Free-schema policy. Every other row is kept unchanged.",
+  "Review revision (type cascade, S2-09/S3-08): AccountSubCategory ADispo resolved by BE prefix (55 bank, 57 cash), balance-sheet AccountCategory codes give no conclusion so the BE prefix step is reachable, LU falls to other. query:type defined as a filter on the computed type; vat and cash are best effort and trigger the line-level AccountType map (account-histories.list over the current and previous fiscal year, cached). Type rows relabelled A per the weakest-basis rule; name, type (create), response.active and items[].name relabelled with inline [F].",
+  "Review revision (verdict, read-back, errors): verdict reasons limited to Horus constraints (no writable category; computed type and emulated filter/paging); duplicate check and read-back listed as connector safeguards. A failed or mismatching accounts.info read-back never fails the request; the response is built from the request (S3-06). Horus 403 mapped to 400 access denied for the connected Horus user (folder or action); folder_id outside the activation selection rejected (D7). Tax-combination files removed from the not-provided list (LD7)."
  ],
  "rejected_findings": []
 }
