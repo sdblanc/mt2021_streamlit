@@ -20,7 +20,7 @@
 
 ## What changed after the senior review
 
-The ten corrections that matter most, one line each. Full list with evidence and "if Chift raises it" notes: **`03_critical_review_register.md`** (issue register). How to present and defend the result: **`02_meeting_prep_guide.md`** (meeting guide).
+The ten corrections that matter most, one line each. Full list with evidence and "if Chift raises it" notes: **`03_critical_review_register.md`** (issue register). How to present and defend the result: **`02_interview_prep_guide.md`** (interview guide).
 
 1. **Verdicts and ratings:** the scale is applied strictly, with no exceptions: **1 Supported (folders) / 10 Supported with workaround / 0 Not supported**; analytic plans moved to workaround (Low complexity), and every route now carries a complexity, a client impact and the tier-1 questions it waits on (§5).
 2. **Headline and recommendation:** "No route is blocked by a missing Horus capability *in the documentation reviewed*", and the recommendation is a **conditional go**: Gate 0, three phases, descoping triggers (§8, §9).
@@ -388,7 +388,7 @@ Minor decisions: D6 (one daybook-type table), D7 (one folder rule, now enforced 
 
 ## 10. Suggested presentation storyline (15–20 minutes, using the HTML report)
 
-The meeting guide (`02_meeting_prep_guide.md`) has a shorter version; this one follows the report.
+The interview guide (`02_interview_prep_guide.md`) explains the reasoning in plain language; this one follows the detailed report.
 
 1. **Context (1 min):** what Chift does; what a connector is; what Horus is (BE/LU accounting firms and SMBs; one database and API URL per license). → report header and section 3 diagram.
 2. **Method and sources (2 min):** the 7 questions, the verdict scale (strict definitions), the basis labels, the review process. Open with the sources: current Horus docs vs the apiary link, SDK spec, no live calls. → section 2.
@@ -441,7 +441,7 @@ The meeting guide (`02_meeting_prep_guide.md`) has a shorter version; this one f
 |---|---|
 | `chift_horus_mapping_report.html` | **External deliverable** for Chift (self-contained; open in any browser) |
 | `01_internal_notes_part1_mapping.md` | These notes (internal) |
-| `02_meeting_prep_guide.md` | Meeting guide: opening, concepts, decisions to defend, likely challenges (internal) |
+| `02_interview_prep_guide.md` | Interview guide: approach, key mapping decisions, concepts, assumptions, likely questions, what to refer to technical colleagues (internal) |
 | `03_critical_review_register.md` | Senior-review issue register: 63 issues with evidence, correction and "if Chift raises it" (internal) |
 | `data/*.json` | Final harmonised mapping data per route group (what the report is generated from) |
 | `decisions.md` | Cross-route decision log D1–D16 (internal wording) |
