@@ -37,12 +37,17 @@ def fmt(s):
     return s
 
 
+BASIS = {'F': 'Documented', 'D': 'Derived', 'A': 'Assumption', '?': 'To confirm'}
+
+
 def tag(t):
     if not t:
         return ''
     t = str(t).strip()
     if re.fullmatch(r'([HC]\d{1,2})([ ,/]+[HC]\d{1,2})*', t):
         return f'<span class="tag q">{esc(t)}</span>'
+    if t in BASIS:
+        return f'<span class="tag basis b-{"Q" if t == "?" else t}">{BASIS[t]}</span>'
     if t.lower().startswith('propos'):
         return f'<span class="tag prop">{esc(t)}</span>'
     if t in FZ:
@@ -50,10 +55,25 @@ def tag(t):
     return f'<span class="tag">{esc(t)}</span>'
 
 
+def lead_tag(t):
+    """Tags that read better in front of the item: step numbers and short labels such as 'Task A'."""
+    t = str(t or '').strip()
+    if re.fullmatch(r'\d{1,2}', t):
+        return f'<span class="no">{t}</span>'
+    if re.fullmatch(r'(Task [AB]|Hint|Gate 0|Phase \d)', t):
+        return f'<b class="lbl">{esc(t)}</b> '
+    return None
+
+
 def items(lst, cls='b'):
     if not lst:
         return ''
-    return f'<ul class="{cls}">' + ''.join(f'<li>{fmt(i["text"])}{tag(i.get("tag"))}</li>' for i in lst) + '</ul>'
+    out = []
+    numbered = all(re.fullmatch(r'\d{1,2}', str(i.get('tag') or '').strip()) for i in lst)
+    for i in lst:
+        lt = lead_tag(i.get('tag'))
+        out.append(f'<li>{lt}{fmt(i["text"])}</li>' if lt else f'<li>{fmt(i["text"])}{tag(i.get("tag"))}</li>')
+    return f'<ul class="{cls}{" num" if numbered else ""}">' + ''.join(out) + '</ul>'
 
 
 def table(t, cls='t'):

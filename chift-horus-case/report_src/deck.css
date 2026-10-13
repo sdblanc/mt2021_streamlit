@@ -236,3 +236,11 @@ table.t.routes .fz { font-size: 12px; padding: 4px 8px; }
 .tb3 .panel h3 { font-size: 16px; margin-bottom: 8px; }
 .tb3 .panel ul.b.sm li { font-size: 14.5px; }
 .tb3 table.t.compact { font-size: 13.5px; }
+
+/* tags in front of items; numbered lists; basis chips */
+ul.b.num li { padding-left: 38px; }
+ul.b.num li::before { display: none; }
+ul.b .no { position: absolute; left: 0; top: 0.05em; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font: 700 13px/26px var(--font-sans); text-align: center; }
+ul.b .lbl { color: var(--accent); font-weight: 700; }
+.tag.basis { background: transparent; border: 1px solid currentColor; font-size: 11px; padding: 3px 6px; }
+.tag.b-F { color: var(--ok); } .tag.b-D { color: #2c46cf; } .tag.b-A { color: var(--warn); } .tag.b-Q { color: var(--bad); }
