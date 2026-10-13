@@ -16,58 +16,47 @@
     "GET /folders.info (default language and country, cached)",
     "POST /countries.list (country code check, cached)"
    ],
-   "how_it_works": "A Chift client becomes a Horus company (the third-party record of a folder) flagged as customer and created with companies.new. Creation returns only an id, so the connector then reads the company, its IBANs and its receivable account back to build the Chift response.",
-   "documented": "companies.new creates the company in a folder and requires FolderId, SearchKey, Name, IsCustomer, IsSupplier, IsVatLiable, LanguageCode and CountryCode (guide: Managing customers & suppliers). One call carries name, VAT number, one address, phone, website, emails, external reference, IBANs and the receivable (concentration) account. Create calls return only the new id (guide: Responses & errors); companies.info and ibans.list return the stored data. One company can be customer and supplier at once, and companies.update is a partial update, so force_merge maps to setting IsCustomer on the existing supplier. A VAT number already used by another company is refused by default, and search keys are unique within the folder.",
+   "how_it_works": "A Chift client becomes a Horus company (a customer or supplier record inside a folder) flagged as customer, created with companies.new. Creation returns only an id, so the connector reads back the company, its IBANs and its receivable account to build the response.",
+   "documented": "companies.new needs folder, search key, name, role and VAT-liable flags, language and country; it takes VAT number, one address, contacts, IBANs and receivable account, and returns only the id. A duplicate VAT number is refused by default; companies.update is partial.",
    "depends_on_assumption": [
-    "The search key (third-party code) is generated from the client name, numeric suffix on collision (Proposal, C8); Horus length and character rules are undocumented.",
-    "Required Horus fields Chift may not send are filled by rule: VAT liability from vat; language and country from folder defaults when missing (Proposal).",
-    "active=false is written as CustomerActivitySuspended=true, a field whose meaning is undocumented.",
-    "company_number of a non-VAT-liable client is stored as VatNumber with IsVatLiable=false; no documented write field exists for the enterprise number.",
-    "Phone and website written as PhoneNumber and Website come back as ContactPhone and ContactWebsite (pairing deduced from field names).",
-    "Duplicate protection rests on a pre-check by VAT number and external reference (Proposal); Horus documents no idempotency key."
+    "Proposal (C8): search key generated from the name, numeric suffix on collision (Horus rules undocumented); missing language and country taken from folder defaults.",
+    "Undocumented field use: active=false as CustomerActivitySuspended; a non-VAT-liable client's company_number as VatNumber; phone and website read back from ContactPhone and ContactWebsite.",
+    "Proposal: duplicates are caught by a pre-check on VAT number and external reference, since Horus documents no idempotency key."
    ],
    "needs_confirmation": [
-    "Horus: search-key rules (maximum length, characters, case) and the error returned for a duplicate key (H7, H6).",
-    "Horus: meaning of CustomerActivitySuspended, Address2 and ContactPerson; how an enterprise number is written; default receivable account (H11).",
-    "Horus: is the duplicate-VAT check per folder, and does it ignore spaces and dots in VAT numbers (H25)?",
-    "Chift: search-key convention for new clients, and behaviour on a duplicate or a same-name client without VAT number (C8, C6).",
-    "Chift: force_merge policy (fill empty supplier fields or overwrite; conflicting external reference) (C6).",
-    "Chift: which address is kept when several are sent, and whether unstorable fields are rejected or dropped (C3)."
+    "Horus: search-key rules and duplicate-key error (H7, H6); meaning of CustomerActivitySuspended, how an enterprise number is written, default receivable account (H11).",
+    "Horus: is the duplicate-VAT check per folder, and does it ignore spaces and dots (H25)?",
+    "Chift: search-key convention, duplicate behaviour, force_merge policy, and whether unstorable fields or extra addresses are rejected or dropped (C8, C6, C3)."
    ],
    "not_concluded": [
-    "Whether a create that timed out can still be committed later; until known, the check before a retry is best effort only (H3).",
-    "Whether sideloading on companies.list can return IBANs and the receivable account, cutting the read-back to one call (include paths undocumented, H15)."
+    "Whether a timed-out create can still be committed later; until known, the check before a retry is best effort (H3).",
+    "Whether companies.list can include IBANs and the receivable account in one call, shortening the read-back (H15)."
    ],
    "feasibility": "Feasible with assumptions",
-   "feasibility_reason": "Creation, read-back and merge are documented; only the search-key format, a few field meanings and the duplicate policy rest on assumptions or Chift decisions, and none blocks the build.",
+   "feasibility_reason": "Creation, read-back and merge are documented; the search-key format, a few field meanings and the duplicate policy rest on assumptions or Chift decisions, none blocking.",
    "considerations": [
     {
-     "text": "A Horus 'company' is a customer or supplier inside a folder, not Chift's company or folder. One record carries both roles, which is why force_merge applies.",
+     "text": "A Horus 'company' is a customer or supplier inside a folder, not the Chift company or folder. One record can hold both roles, hence force_merge.",
      "basis": "F"
     },
     {
-     "text": "Horus requires a search key, the third-party code accountants see, that Chift does not send. The connector must generate it per folder; deriving it from the name is a Proposal (C8).",
+     "text": "Horus requires a search key (the third-party code accountants see) that Chift does not send; the connector must generate one per folder. Proposal: derive it from the name (C8).",
      "basis": "A"
     },
     {
-     "text": "A VAT number already used by another company is refused by default. A client that already exists as a supplier must go through force_merge, not a second record.",
+     "text": "A VAT number already used by another company is refused by default, so a client that already exists as a supplier must go through force_merge.",
      "basis": "F"
     },
     {
-     "text": "Creation returns only an id (documented), so the response needs two to three extra read calls: company details, IBANs, and the receivable account unless cached.",
-     "basis": "D"
-    },
-    {
-     "text": "There is no idempotency key and no company delete endpoint. A blind retry can leave an undeletable duplicate, so the connector searches before retrying.",
+     "text": "No idempotency key and no company delete endpoint: a blind retry can leave an undeletable duplicate, so the connector searches before retrying.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "One address per company: extra invoice or delivery addresses are lost, and later reads return one 'main' address.",
-    "No field for mobile, internal_notes, first_name, last_name, function or company_id; currency is read-only. These values are dropped and returned as null.",
-    "No company/individual flag: a client sent with is_company=false comes back as a company.",
-    "The enterprise number of a VAT-liable client has no separate field and is lost.",
-    "Non-IBAN bank accounts (local account number with routing code) cannot be stored."
+    "One address per company: extra invoice or delivery addresses are lost.",
+    "mobile, internal_notes, first_name, last_name, function, company_id: no field; dropped and returned null. Currency is read-only.",
+    "is_company=false: no company/individual flag, so every client comes back as a company.",
+    "Enterprise number of a VAT-liable client, and non-IBAN bank accounts, cannot be stored."
    ]
   },
   {
@@ -78,71 +67,57 @@
     "POST /account-histories.list"
    ],
    "horus_support": [
-    "POST /daybooks.list (pick sales or purchase journals, cached)",
-    "POST /invoices.sales.outstanding.list (sales: payment status, invoice-currency amounts)",
-    "POST /account-histories.list (second call: payments, when requested)",
-    "POST /fiscal-years.list (default period without dates, cached)",
+    "POST /daybooks.list (sales or purchase journals, cached)",
+    "POST /invoices.sales.outstanding.list (sales: payment status, invoice currency)",
+    "POST /account-histories.list (payments, when requested)",
+    "POST /fiscal-years.list (default period, cached)",
     "GET /folders.info (legislation for VAT codes, cached)",
     "POST /cost-schemas.list, /cost-sections.list (analytics lookup, cached)",
     "POST /accounts.list (partner account number, cached)",
-    "GET /book-entries.info (complete changed entries, incremental reads)"
+    "GET /book-entries.info (changed entries, incremental reads)"
    ],
-   "how_it_works": "Horus has no endpoint that lists invoices, so each Chift invoice is rebuilt from the ledger: headers from book-entries.list (one call per sales or purchase journal, credit-note journals included) and lines, VAT, analytics and matching from one account-histories.list call. For sales, the open sales invoices list adds payment status and invoice-currency amounts; the connector then classifies, filters and paginates.",
-   "documented": "Pushed invoices are 'converted into book entries in the corresponding daybook' (guide: Posting sales & purchase invoices). book-entries.list returns entry headers (number, date, confirmed flag, partner, totals, attached document) for one daybook and a month period, with the partner sideloaded on request. account-histories.list returns all entry lines of a period, across several daybooks, with optional VAT, analytic, partner and matching detail. invoices.sales.outstanding.list returns open sales invoices and credit notes with open amount, payment status, transaction type and invoice-currency totals. ModifiedAfter exists on book-entries.list and account-histories.list.",
+   "how_it_works": "No Horus endpoint lists all invoices, so each is rebuilt from the ledger: headers from book-entries.list (one call per sales or purchase journal) and lines, VAT, analytics and matching from account-histories.list. For sales, the open sales invoices list adds payment status and invoice-currency amounts.",
+   "documented": "Pushed invoices become book entries in their daybook. book-entries.list gives headers per daybook and month period, account-histories.list gives lines with VAT, analytics and matching (both accept ModifiedAfter); the open sales list adds open amount, payment status, invoice currency.",
    "depends_on_assumption": [
-    "Invoice or credit note is decided by the journal type; the amount sign decides only in folders without a credit-note journal (Proposal, D1).",
-    "Ledger amounts are in EUR: foreign-currency invoices come back in EUR unless the open sales list gives the invoice currency (Proposal, D4).",
-    "Lists return the full result for the period: no paging parameter is documented, so Chift paging is emulated on a cached result.",
-    "Month periods filter on the entry date; the connector filters to the day and may widen the window by one month.",
-    "tax_code is rebuilt from the line VAT fields against the folder's accepted combinations; null when ambiguous (Proposal, D2).",
-    "reference and customer_memo are split from the header comment, whose location on read is undocumented (Proposal, D3; H9).",
-    "'paid' is inferred from full matching of the partner line, which also covers offsets by credit notes."
+    "Proposal (D1, D2): invoice or credit note is decided by journal type; tax_code is rebuilt from line VAT fields, null when ambiguous.",
+    "Proposal (D4): ledger amounts are EUR, so foreign-currency invoices return in EUR unless the open sales list gives the invoice currency.",
+    "Lists return full results (no paging documented); 'paid' is inferred from full matching; reference and memo are split from the header comment (D3, H9)."
    ],
    "needs_confirmation": [
-    "Horus: can the invoice/credit-note type be exposed on read, and can credit notes sit in invoice journals (H2)?",
-    "Horus: currency of ledger amounts and direction of CurrencyRate for foreign-currency invoices (H4).",
-    "Horus: limits on result size, period span, request rate and timeouts for multi-year ledger reads (H5).",
-    "Horus: does ModifiedAfter catch payments and accountant edits, and do accountant edits also create a new id (H10)?",
-    "Chift: default period without dates, unconfirmed entries returned as draft or excluded, acceptable full re-sync cadence (C10, C11).",
-    "Chift: which misclassification is more acceptable when the document type cannot be read (C5).",
-    "Chift: invoice currency while open, or one stable EUR view, for foreign-currency invoices (C16)."
+    "Horus: can the document type be read, and can credit notes sit in invoice journals (H2)? Currency of ledger amounts and CurrencyRate direction (H4)?",
+    "Horus: limits on result size, period and request rate (H5); does ModifiedAfter catch payments and accountant edits (H10)?",
+    "Chift: default period, draft handling and re-sync cadence (C10, C11); acceptable misclassification (C5); invoice currency or stable EUR view (C16)."
    ],
    "not_concluded": [
-    "Performance on large folders: Horus documents no limits and no request was sent; to measure on a test folder.",
-    "How deleted or replaced invoices can be detected: no deletion signal is documented; webhooks are mentioned but not documented.",
+    "Performance on large folders: Horus documents no limits and no request was sent; to be measured on a test folder.",
+    "How deleted or replaced invoices are detected: no deletion signal is documented; webhooks are mentioned but not documented.",
     "Whether the open sales invoices list ever returns fully paid invoices."
    ],
    "feasibility": "Needs confirmation",
-   "feasibility_reason": "All core invoice data is readable, but the invoice/credit-note split, foreign-currency amounts and large-folder behaviour rest on points only Horus can confirm (H2, H4, H5).",
+   "feasibility_reason": "Core invoice data is readable, but the invoice/credit-note split, foreign-currency amounts and large-folder behaviour depend on Horus answers (H2, H4, H5).",
    "considerations": [
     {
-     "text": "This is the clearest case of one Chift route needing several Horus endpoints: one header call per journal, one or two ledger calls, and the open sales list for sales types.",
+     "text": "The clearest case of one Chift route needing several Horus endpoints: one header call per journal, one or two ledger calls, plus the open sales list.",
      "basis": "D"
     },
     {
-     "text": "Updating an invoice through the API creates a new book entry with a new id. Ids stored by consumers stop working; reconcile on journal plus number.",
+     "text": "Updating an invoice creates a new book entry with a new id, so stored ids stop working; reconcile on journal plus number.",
      "basis": "F"
     },
     {
-     "text": "Incremental sync (updated_after) still reads a whole month window and reports neither deletions nor replaced ids, so a periodic full re-sync is needed.",
+     "text": "Paging, day-level dates, payment_status and approval_status have no Horus parameter and are emulated; updated_after still reads a month window and misses deletions, so periodic full re-sync is needed.",
      "basis": "D"
     },
     {
-     "text": "Pagination, day-level dates, payment_status and approval_status have no Horus parameter and are emulated by the connector.",
-     "basis": "D"
-    },
-    {
-     "text": "There is no purchase-side open-invoice list, so purchase payments and 'paid' status come only from matching on the ledger.",
+     "text": "There is no purchase-side open-invoice list, so purchase payment status comes only from matching on the ledger.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "Line quantity, unit price and unit of measure are not stored: lines return quantity 1 and unit price equal to the line amount.",
-    "delivery_date, payment_term_id, payment_method_id and withholding_tax have no per-invoice field on read and are returned null.",
-    "No 'cancelled' status and no approval workflow: approval_status stays 'unknown' unless Chift accepts Horus 'Verified' (C18).",
-    "The purchase VAT kind is not returned, so some purchase tax_codes come back null; rate and amount are still returned.",
-    "The original currency of paid sales invoices and of all purchase invoices is not readable under the EUR assumption.",
-    "Partner is_company, first name and last name are not stored: every partner is returned as a company."
+    "Line quantity, unit price and unit: not stored; lines return quantity 1 and unit price equal to the line amount.",
+    "delivery_date, payment_term_id, payment_method_id, withholding_tax and partner first and last names: no field on read; returned null.",
+    "No 'cancelled' status or approval workflow: approval_status stays 'unknown' unless Chift accepts Horus 'Verified' (C18).",
+    "Purchase VAT kind (some tax_codes null) and original currency of paid sales and all purchase invoices are not readable."
    ]
   },
   {
@@ -162,63 +137,49 @@
     "POST /companies.list, /companies.new (partner_info: find or create)",
     "POST /book-entries.list (duplicate number check)",
     "GET /book-entries.info (read back created entry)",
-    "POST /account-histories.list (line read-back, only when needed)"
+    "POST /account-histories.list (line read-back, when needed)"
    ],
-   "how_it_works": "Customer invoices and refunds go to invoices.sales.new and supplier ones to invoices.purchases.new (Type 0 invoice, 1 credit note), with the PDF in the same call. Before posting, the connector resolves the journal, partner, accounts, VAT combination and analytic codes, turns analytic percentages into amounts and checks the number; after posting it reads the entry back.",
-   "documented": "invoices.sales.new and invoices.purchases.new create an invoice (Type 0) or credit note (Type 1) with header totals, lines (account, base, VAT amount, VAT fields), cost lines per analytic schema, currency, payment reference, comment and an optional file in the same multipart call. The posting guide lists the prerequisites: FolderId, a sales (200/250) or purchase (100/150) daybook, the CompanyId and the account search keys. Horus checks that total = base + tax and that the lines sum to the header. Only the combinations in Horus's two published tax-combination spreadsheets are valid, one list per legislation (BE, LU) and direction. Entries are unconfirmed by default for accountant review; Number is numeric and can be 0 while unconfirmed. Create returns only the book entry id, and book-entries.info reads the entry back by id.",
+   "how_it_works": "Customer invoices and refunds go to invoices.sales.new, supplier ones to invoices.purchases.new (Type 0 invoice, 1 credit note), PDF included. The connector first resolves journal, partner, accounts, VAT combination and analytic codes, converts analytic percentages to amounts, checks the number, then reads the entry back.",
+   "documented": "Both endpoints take header totals, lines with VAT fields and analytics, currency, comment and an optional file. Horus checks that totals add up and accepts only its published tax combinations. Entries are unconfirmed by default; create returns only the id.",
    "depends_on_assumption": [
-    "Each Chift tax_code is a connector-owned id for one accepted Horus VAT combination, per folder legislation and direction (Proposal, D2).",
-    "Per-plan analytic percentages become amounts on combined cost lines, assuming plans are independent; rounding keeps the exact line total (Proposal, C9).",
-    "Credit notes go in with Type 1 and positive amounts; refunds use the invoice journal when no credit-note journal exists (Proposal, D1).",
-    "VAT amounts are booked as sent (OverrideTaxAmounts = true), not recalculated by Horus (Proposal, C2).",
-    "Posting mode chosen per connection: review (unconfirmed, proposed default) or direct (status 'posted' confirmed) (Proposal, C1).",
-    "A duplicate check on the invoice number runs before creating and before any retry; best effort, since Horus documents no uniqueness rule (Proposal).",
-    "partner_info.account_number is read as the third-party code; the partner is found with a name check, otherwise created (Proposal, C8)."
+    "Proposal (D2, C2): each Chift tax_code is a connector-owned id for one accepted Horus VAT combination; VAT amounts are booked as sent.",
+    "Proposal (C1, D1): posting mode per connection, review (unconfirmed, default) or direct; credit notes sent as Type 1 with positive amounts.",
+    "Proposal (C9, C8): analytic percentages per plan become amounts on combined cost lines; partner_info.account_number is read as the third-party code."
    ],
    "needs_confirmation": [
-    "Horus: are the tax-combination files current and complete, which TaxOrigin list is authoritative for Luxembourg, how are invalid combinations rejected (H1)?",
-    "Horus: numbering of a confirmed invoice sent without number, uniqueness of numbers, outcome of a timed-out create (H3).",
-    "Horus: may a credit note go into an invoice journal, and are negative lines or totals accepted (H2)?",
-    "Horus: currency of the amounts sent and direction of CurrencyRate (H4); may every user set Confirmed = true (H21)?",
-    "Horus: a test licence or folder, because writes hit real data and invoices cannot be deleted (H17).",
-    "Chift: posting mode and meaning of 'draft' (C1); rule for invoices sent without number, since Horus does not number them (C7).",
-    "Chift: reject or drop inputs Horus cannot store (C3), and the meaning of partner_info.account_number (C8)."
+    "Horus: are the tax-combination files current and complete, how are invalid combinations rejected (H1)? A test folder, since invoices cannot be deleted (H17).",
+    "Horus: numbering, number uniqueness and timed-out creates (H3); credit notes in invoice journals, negative amounts (H2); currency (H4); may every user confirm (H21)?",
+    "Chift: posting mode and meaning of 'draft' (C1); rule for unnumbered invoices (C7); reject or drop unstorable inputs (C3); meaning of partner_info.account_number (C8)."
    ],
    "not_concluded": [
     "Effect of a mandatory free-typed analytic dimension or a locked cost section on posting (H13).",
-    "Maximum attachment size for the PDF: undocumented (H18)."
+    "Maximum PDF attachment size (H18)."
    ],
    "feasibility": "Needs confirmation",
-   "feasibility_reason": "The native endpoints cover the route, but the VAT catalogue (H1), numbering and duplicates (H3, C7) and the posting status (C1) need answers before the design is final.",
+   "feasibility_reason": "The native endpoints cover the route, but the VAT catalogue (H1), numbering and duplicates (H3, C7) and posting status (C1) need answers first.",
    "considerations": [
     {
-     "text": "VAT is the main risk: Horus has no VAT-code list and accepts no code on write. Each line needs rate, origin and type, plus kind and condition for purchases.",
+     "text": "VAT is the main risk: Horus accepts no VAT code; each line needs rate, origin and type (plus kind and condition for purchases) from an accepted combination.",
      "basis": "F"
     },
     {
-     "text": "Horus's posting guide requires the folder, daybook, partner and account codes before posting, so one Chift call needs several lookups (mostly cached) before the create.",
-     "basis": "F"
-    },
-    {
-     "text": "Numbers must be numeric and invoices are not numbered automatically through the API. A number such as INV-2024/001 belongs in reference, not invoice_number.",
+     "text": "Numbers must be numeric and the API does not number invoices automatically; a number such as INV-2024/001 belongs in reference, not invoice_number.",
      "basis": "D"
     },
     {
-     "text": "Entries pushed through the API are unconfirmed by default, while Chift's default status is 'posted'. The response must report the status actually stored.",
+     "text": "API entries are unconfirmed by default, while Chift defaults to 'posted'; the response must report the status actually stored.",
      "basis": "F"
     },
     {
-     "text": "No API endpoint deletes an invoice: a wrong or duplicated invoice must be corrected by the accountant, hence the duplicate check before any retry.",
+     "text": "No endpoint deletes an invoice, so a wrong or duplicate one needs the accountant; hence a best-effort duplicate-number check before creating and before any retry.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "withholding_tax and nl_payment_terms_split (Dutch split payment) have no Horus field; Horus folders are Belgian or Luxembourgish. Proposal: reject with 422 (C3).",
-    "Line quantity, unit price and unit of measure are not stored: echoed in the create response, lost on later reads.",
-    "start_date, end_date, delivery_date, force_financial_period and payment_term_id have no field; the period follows the invoice date (Proposal: reject or log, C3).",
-    "reference has no own field: it shares the header comment with customer_memo and cannot be filtered on later.",
-    "Automatic numbering ('system's numbering rules') is unavailable for invoices; Proposal: an invoice without number is pushed for review and returned as draft (C7).",
-    "Currencies outside Horus's list of 32 codes plus EUR are rejected."
+    "withholding_tax and nl_payment_terms_split: no Horus field (Belgian and Luxembourg folders only). Proposal: reject with 422 (C3).",
+    "start_date, end_date, delivery_date, force_financial_period, payment_term_id: no field; the period follows the invoice date (Proposal: reject or log, C3).",
+    "Line quantity, unit price and unit are not stored; reference shares the header comment with customer_memo and cannot be filtered.",
+    "Automatic numbering unavailable (Proposal: unnumbered invoices go to review as draft, C7); currencies outside Horus's list are rejected."
    ]
   },
   {
@@ -232,42 +193,41 @@
     "POST /fiscal-years.list (bookyears for next numbers, opt-in)",
     "POST /book-entries.list (highest existing number, opt-in)"
    ],
-   "how_it_works": "One Horus call lists every daybook (journal) of the folder with its code, name, type, IBAN and currency. The connector translates the Horus daybook type into the Chift journal type and looks up the counterpart account number in the cached chart of accounts, because Horus returns only an internal reference to that account.",
-   "documented": "daybooks.list returns, per daybook, its Id, SearchKey (code), Heading (name), Type, Iban, currency settings and a reference to its concentration account (F). The Horus guide links daybook types 100/150, 200/250, 500, 590 and 600 to API posting endpoints (F), so these types map onto Chift journal types by deduction (D). accounts.list turns the account reference into an account number (F).",
+   "how_it_works": "One Horus call lists every daybook (journal) of the folder with code, name, type, IBAN and currency. The connector maps the daybook type to the Chift journal type and looks up the counterpart account number in the cached chart of accounts.",
+   "documented": "daybooks.list returns per daybook its id, code, name, type, IBAN, currency settings and a reference to its counterpart account. The guide links types 100/150, 200/250, 500, 590 and 600 to posting endpoints; mapping them to Chift types is a deduction.",
    "depends_on_assumption": [
-    "Cash, temporary, system and cost daybooks (550, 610, 690, 700) are mapped and returned as blocked, because no API posting endpoint is documented for them.",
-    "Sales and purchase journals are returned as accepting other currencies, assuming the folder allows currencies; the API does not expose that setting.",
-    "An empty journal currency is read as 'follows the folder currency'; the daybook CurrencyCode field has no description.",
-    "Proposal: next_document_numbers stays empty by default; an estimate from the highest existing number is opt-in, as the numbering format is undocumented."
+    "Cash, temporary, system and cost daybooks (550, 610, 690, 700) are returned as blocked, as no API posting endpoint is documented for them.",
+    "Sales and purchase journals are assumed to accept other currencies (setting not exposed); an empty journal currency is read as the folder currency.",
+    "Proposal: next_document_numbers stays empty by default; an estimate from the highest existing number is opt-in, as numbering is undocumented."
    ],
    "needs_confirmation": [
-    "Horus: can cash or temporary daybooks receive entries through the API, and what does the daybook flag IsUsed mean (H14)?",
-    "Horus: numbering format and sequence per daybook and fiscal year (H3), only if next document numbers are required.",
+    "Horus: can cash or temporary daybooks receive API entries, and what does IsUsed mean (H14)?",
+    "Horus: numbering format per daybook and fiscal year (H3), only if next document numbers are required.",
     "Chift: is an empty next_document_numbers acceptable (C4), and should non-postable journals be listed as blocked or hidden?"
    ],
    "not_concluded": [
-    "Whether a daybook can be deactivated in Horus Office: daybooks carry no status field, and the meaning of IsUsed is undocumented."
+    "Whether a daybook can be deactivated in Horus Office: daybooks carry no status field and IsUsed is undocumented."
    ],
    "feasibility": "Feasible with assumptions",
-   "feasibility_reason": "The core journal fields come natively from one call; blocked, other_currencies_allowed and the type of less common daybooks rest on assumptions until Horus answers H14.",
+   "feasibility_reason": "Core journal fields come natively from one call; blocked, other_currencies_allowed and the type of less common daybooks rest on assumptions until Horus answers H14.",
    "considerations": [
     {
-     "text": "The Horus daybook type decides which endpoint can post entries into a journal, so it is the routing key for every write route, not only for this list.",
+     "text": "The daybook type decides which endpoint can post into a journal, so it is the routing key for every write route, not only this list.",
      "basis": "D"
     },
     {
-     "text": "journal_type describes the daybook, not each entry: Horus invoices carry their own invoice or credit-note type, so credit notes may sit in a sales or purchase journal.",
+     "text": "journal_type describes the daybook, not each entry: Horus invoices carry their own invoice or credit-note type, so credit notes may sit in sales or purchase journals.",
      "basis": "D"
     },
     {
-     "text": "Only bank daybooks can carry their own currency; miscellaneous, bank and financial postings have no currency field, so these journals are returned as not accepting other currencies.",
+     "text": "Only bank daybooks can have their own currency, yet miscellaneous, bank and financial postings have no currency field, so these journals are returned as not accepting other currencies.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "unallocated_account: Horus exposes no suspense account per daybook or folder, so it is always empty and bank-reconciliation flows cannot prefill it.",
-    "blocked: no Horus flag; it is derived from the daybook type, so it reflects what the API can post, not settings made in Horus Office.",
-    "next_document_numbers: Horus has no numbering sequence per daybook; empty by default (the Chift default)."
+    "unallocated_account: Horus has no suspense account per daybook or folder; always empty.",
+    "blocked: no Horus flag; derived from the daybook type, reflecting what the API can post.",
+    "next_document_numbers: no numbering sequence per daybook in Horus; empty by default (the Chift default)."
    ]
   },
   {
@@ -277,20 +237,20 @@
     "POST /accounts.new"
    ],
    "horus_support": [
-    "POST /accounts.list (exact duplicate check, uncached)",
+    "POST /accounts.list (duplicate check, uncached)",
     "GET /accounts.info (read back created account)",
     "POST /daybooks.list (compute returned type, cached)"
    ],
-   "how_it_works": "The connector checks that the number is not already used, creates the account with its number and name, then reads it back, because Horus returns only an internal id. The Chift type is not sent: a Horus account has no writable type or category.",
-   "documented": "accounts.new takes FolderId, SearchKey (the account number) and Heading (the name) and returns only the new Id (F). accounts.info returns the stored account with its Inactive flag and category fields (F). Neither accounts.new nor accounts.update accepts a category or type (F).",
+   "how_it_works": "The connector checks that the number is free, creates the account with number and name, then reads it back, because Horus returns only an id. The Chift type is not sent: Horus accounts have no writable type or category.",
+   "documented": "accounts.new takes FolderId, SearchKey (the account number) and Heading (the name) and returns only the new Id. accounts.info returns the stored account with its Inactive flag and categories. Neither create nor update accepts a category or type.",
    "depends_on_assumption": [
-    "The type returned is computed from Horus data and number prefixes; a new account often comes back as 'other' or as a prefix-based guess.",
-    "The duplicate check may miss an inactive account, because whether accounts.list returns inactive accounts is undocumented."
+    "The returned type is computed from Horus data and number prefixes; a new account often comes back as 'other' or a prefix-based guess.",
+    "The duplicate check may miss an inactive account: whether accounts.list returns inactive accounts is undocumented."
    ],
    "needs_confirmation": [
-    "Horus: does accounts.new derive a category from the number, and can a category be set through the API at all (H12)?",
-    "Horus: account number rules per Belgian or Luxembourg chart, and the error returned for a duplicate number (H7).",
-    "Chift: when the requested type cannot be stored, should the connector reject, warn or drop it silently (C3)?"
+    "Horus: does accounts.new derive a category from the number, and can a category be set at all (H12)?",
+    "Horus: account number rules per Belgian or Luxembourg chart, and the duplicate-number error (H7).",
+    "Chift: when the type cannot be stored, reject, warn or drop it silently (C3)?"
    ],
    "not_concluded": [],
    "feasibility": "Confirmed",
@@ -301,21 +261,21 @@
      "basis": "D"
     },
     {
-     "text": "The Horus search key, 'usually the account number', is how every posting endpoint references an account, so the Chift number is the join key across routes.",
+     "text": "The search key, 'usually the account number', is how every posting endpoint references an account, so the Chift number is the join key across routes.",
      "basis": "D"
     },
     {
-     "text": "The Chift type sent on creation is lost: clients that classify accounts by type see a computed type, for example 'other' until a bank journal uses the account.",
+     "text": "The Chift type sent is lost; consumers that classify accounts by type see a computed type, e.g. 'other' until a bank journal uses the account.",
      "basis": "D"
     },
     {
-     "text": "Horus documents no number rules (length, classes per Belgian or Luxembourg chart), so an invalid number is caught only by Horus, with an undocumented error.",
+     "text": "Horus documents no number rules (length, classes per chart), so an invalid number is caught only by Horus, with an undocumented error.",
      "basis": "?"
     }
    ],
    "not_mappable": [
-    "type: Horus has no writable type or category, so the type sent is lost and the type returned may differ.",
-    "scheme_ids: Horus has no reporting-scheme classification; always empty."
+    "type: no writable type or category in Horus; the type sent is lost and the type returned may differ.",
+    "scheme_ids: no reporting-scheme classification in Horus; always empty."
    ]
   },
   {
@@ -329,39 +289,39 @@
     "POST /companies.list (receivable and payable accounts, optional)",
     "POST /account-histories.list (VAT and cash typing, filter only)"
    ],
-   "how_it_works": "One Horus call returns the folder's full chart (number, name, active flag, categories); the connector caches it and applies the class filter and paging itself. Horus has no account type field, so the Chift type is computed from several Horus sources and the type filter is applied to that computed value.",
-   "documented": "accounts.list returns SearchKey, Heading, Inactive, IntCategory, AccountCategory and AccountSubCategory per account (F); its only filters are SearchKeys ('starts with') and Heading, and it has no paging parameter (F). Bank (500) and Financial (590) daybooks reference their account (F), and ledger lines carry an account type: customer, supplier, general, VAT or cash (F).",
+   "how_it_works": "One Horus call returns the full chart (number, name, active flag, categories); the connector caches it and applies the class filter and paging itself. Horus has no account type, so the Chift type and type filter rely on a value computed from several Horus sources.",
+   "documented": "accounts.list returns number, name, Inactive flag and category fields per account; it filters only by number prefix and name, without paging. Bank and financial daybooks reference their account, and ledger lines carry an account type (customer, supplier, general, VAT, cash).",
    "depends_on_assumption": [
     "The type is computed from journals, categories and ledger lines; the last fallback, Belgian number prefixes, is general accounting knowledge, not Horus documentation.",
-    "type=vat and type=cash are best effort: unused VAT or cash accounts are typed only by Belgian prefixes, and not at all in Luxembourg folders.",
-    "The class filter assumes the search key is the account number, which the Horus guide says is 'usually' the case."
+    "type=vat and type=cash are best effort: unused VAT or cash accounts are typed only by Belgian prefixes, not at all in Luxembourg.",
+    "The class filter assumes the search key is the account number, which the guide says is 'usually' the case."
    ],
    "needs_confirmation": [
-    "Horus: full list of IntCategory codes and whether AccountCategory is always filled, which would make the type reliable (H12).",
-    "Chift: when a type filter can only be estimated, return 400, ignore the filter, or return a best-effort result (C18)?",
-    "Chift: what other_expense and other_financial mean, so that Horus subcategories map to the right Chift type."
+    "Horus: full list of IntCategory codes, and is AccountCategory always filled, which would make the type reliable (H12)?",
+    "Chift: when a type filter can only be estimated, return 400, ignore it, or return a best-effort result (C18)?",
+    "Chift: meaning of other_expense and other_financial, to map Horus subcategories to the right type."
    ],
    "not_concluded": [
-    "Whether the chart includes inactive accounts and non-postable title accounts: accounts.list has no filter for either and the documentation is silent (H12)."
+    "Whether the chart includes inactive and non-postable title accounts: no filter exists and the documentation is silent (H12)."
    ],
    "feasibility": "Feasible with assumptions",
-   "feasibility_reason": "Number, name and active status are native; the account type, which clients use to find bank, VAT or cash accounts, rests on a heuristic cascade.",
+   "feasibility_reason": "Number, name and active status are native; the account type, which consumers use to find bank, VAT or cash accounts, rests on a chain of estimates.",
    "considerations": [
     {
-     "text": "Customers and suppliers are not separate ledger accounts in Horus: they are usually booked on shared collective accounts (e.g. 400000, 440000) with a partner reference.",
+     "text": "Customers and suppliers are not separate ledger accounts: they are usually booked on shared collective accounts (e.g. 400000, 440000) with a partner reference.",
      "basis": "D"
     },
     {
-     "text": "Horus recommends loading the chart once and caching it per folder; with no paging in Horus, every Chift page is cut from that full list.",
+     "text": "Horus recommends loading reference data once and caching it per folder; with no paging in Horus, every Chift page is cut from that full list.",
      "basis": "D"
     },
     {
-     "text": "Bank accounts linked to a bank journal are typed reliably; VAT, cash and payable types are less reliable for accounts that have no movements yet.",
+     "text": "Bank accounts linked to a bank journal are typed reliably; VAT, cash and payable types are less reliable for accounts without movements.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "type: no account-level field in Horus; only a computed value can be returned, which can be wrong for accounts without movements.",
+    "type: no account-level field; only a computed value, which can be wrong for accounts without movements.",
     "scheme_ids: no Horus equivalent; always empty."
    ]
   },
@@ -374,18 +334,17 @@
    "horus_support": [
     "GET /folders.info (address country, only if needed)"
    ],
-   "how_it_works": "One Horus call lists every folder the connected user can access (a Horus folder is one company's books, which is the Chift folder), and Chift adds its own 'selected' flag from activation. Proposal: the address country, which needs one extra call per folder, is left empty by default.",
-   "documented": "folders.list returns Id, FolderName, Legislation (BE or LU), IsVatLiable, VatNumber, Address, ZipCode and Locality for the folders the user can access (F). CountryCode is returned only by folders.info (F). What a user sees through the API depends on their access in Horus (F).",
+   "how_it_works": "One Horus call lists every folder the connected user can access (a Horus folder is one company's books, the Chift folder); Chift adds its 'selected' flag from activation. Proposal: the address country, one extra call per folder, is left empty by default.",
+   "documented": "folders.list returns id, name, legislation (BE or LU), VAT liability, VAT number and address for the folders the user can access; CountryCode comes only from folders.info. API visibility follows the user's access in Horus.",
    "depends_on_assumption": [
-    "main_currency is returned as 'EUR': Horus folders have no currency field, and the base currency is assumed to be euro (H4).",
-    "active is always true for returned folders, because Horus has no folder status; a selected folder that disappears is returned as inactive.",
-    "company_number is derived from a Belgian VAT number (BE plus enterprise number), from general knowledge; empty for Luxembourg or non-VAT-liable folders.",
-    "Street and house number are split from one Horus address string, following the documented example format."
+    "main_currency is returned as 'EUR': Horus folders have no currency field (H4).",
+    "active is always true for returned folders (no Horus status); a selected folder that disappears is returned as inactive.",
+    "company_number is derived from a Belgian VAT number (general knowledge), empty otherwise; street and house number are split from one address string."
    ],
    "needs_confirmation": [
     "Horus: is a folder's base currency always EUR (H4)?",
     "Horus: does folders.list return archived or closed folders, and is the enterprise number available anywhere?",
-    "Chift: is the address country needed, given that it costs one extra Horus call per folder (C4)?"
+    "Chift: is the address country needed, given its cost of one extra call per folder (C4)?"
    ],
    "not_concluded": [],
    "feasibility": "Feasible with assumptions",
@@ -396,21 +355,21 @@
      "basis": "F"
     },
     {
-     "text": "For an accountant, the list returns every folder of the firm's license, so the activation picker may need search or filtering.",
+     "text": "For an accounting firm, the list can hold every folder of its license, so the activation picker may need search or filtering.",
      "basis": "D"
     },
     {
-     "text": "One Horus authorisation covers every folder the user can access, so Chift's folder selection at activation is what limits a connection's scope.",
+     "text": "One Horus authorisation covers every folder the user can access, so Chift's folder selection at activation limits a connection's scope.",
      "basis": "D"
     },
     {
-     "text": "Each Horus license has its own API address and tokens, so one Chift connection covers one license; a firm with several licenses needs several connections.",
+     "text": "Each license has its own API address and tokens, so one Chift connection covers one license; a firm with several licenses needs several connections.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "Folder status: Horus has no active or archived flag; active is inferred from presence in the list.",
-    "main_currency: no Horus field; returned as 'EUR' by assumption.",
+    "Folder status: no active or archived flag; active is inferred from presence in the list.",
+    "main_currency: no Horus field; 'EUR' by assumption.",
     "Address box number: no Horus field; always empty."
    ]
   },
@@ -426,50 +385,46 @@
     "POST /cost-schemas.list (analytic plan code, cached)",
     "POST /fiscal-years.list (closed-period check, every create)",
     "POST /book-entries.list (duplicate number check, if numbered)",
-    "GET /book-entries.info (read back Horus-generated number)"
+    "GET /book-entries.info (read back generated number)"
    ],
-   "how_it_works": "The connector posts one balanced entry into the folder's miscellaneous-operation daybook: each signed Chift amount becomes a debit or a credit, and each line type becomes customer, supplier or general. The journal, analytic codes and closure dates are looked up first, and the entry is read back only when Horus generates the number.",
-   "documented": "The endpoint posts an operation whose lines carry a type (1 customer, 2 supplier, 3 general), an account search key, non-negative Debit and Credit, a company id on customer and supplier lines, and optional cost lines (F). Debits and credits must balance (F). Number is numeric and can be 0 while unconfirmed; automatic numbering works only with Confirmed = true (F). API entries are unconfirmed by default, and only unconfirmed API entries can be deleted (F).",
+   "how_it_works": "The connector posts one balanced entry in the miscellaneous-operation daybook: signed Chift amounts become debits or credits, line types become customer, supplier or general. Journal, analytic codes and closed periods are checked first; the entry is read back only if Horus numbers it.",
+   "documented": "Lines carry a type (customer, supplier, general), account code, non-negative debit or credit, partner id where needed and optional analytics; debits must equal credits. Number is numeric; automatic numbering needs Confirmed = true. Only unconfirmed API entries can be deleted.",
    "depends_on_assumption": [
-    "Proposal: operations in another currency are converted to EUR at the supplied rate, because Horus operations have no currency field.",
-    "The folder currency is assumed to be EUR; Horus exposes no folder currency (H4).",
-    "operation_number is assumed to be the Horus entry number; proposal: non-numeric values and leading zeros are rejected (C7).",
-    "Proposal: a posting mode per connection; review (default) pushes every operation unconfirmed, direct confirms 'posted' operations (C1).",
+    "Proposal (C15, H4): foreign-currency operations are converted to EUR at the supplied rate, as Horus operations have no currency field; folder currency assumed EUR.",
+    "Proposal (C7, C1): operation_number is the Horus entry number (non-numeric rejected); review mode pushes unconfirmed, direct mode confirms 'posted' operations.",
     "Only Type 600 daybooks are accepted; other miscellaneous daybook types have no documented API posting path."
    ],
    "needs_confirmation": [
-    "Chift: does Chift core convert foreign-currency amounts before the call, in which rate direction, and how is a rounding residue absorbed (C15)?",
-    "Chift: review or direct posting by default, given Chift defaults to 'posted' and confirmed operations cannot be deleted through the API (C1).",
-    "Horus: may every licence and user type set Confirmed = true, or can some receive a 403 (H21)?",
-    "Chift: is operation_number the entry number or the client's reference; reject non-numeric values or let Horus number confirmed operations (C7)?",
-    "Horus: is the entry number unique per daybook and fiscal year, and what happens on a duplicate (H3)?"
+    "Chift: does Chift core convert foreign-currency amounts first, in which rate direction, and who absorbs rounding (C15)?",
+    "Chift: review or direct posting by default (C1), and is operation_number the entry number or a client reference (C7)?",
+    "Horus: may every user confirm entries (H21); is the entry number unique per daybook and year, and what happens on a duplicate (H3)?"
    ],
    "not_concluded": [
-    "Whether a VAT closure also blocks miscellaneous operations: fiscal years carry both closure dates, and the guide does not say which one applies (H14).",
-    "Behaviour when a folder has several mandatory analytic plans, since Chift sends at most one analytic account per line (H13)."
+    "Whether a VAT closure also blocks miscellaneous operations: fiscal years carry both closure dates and the guide is silent (H14).",
+    "Behaviour with several mandatory analytic plans, since Chift sends at most one analytic account per line (H13)."
    ],
    "feasibility": "Needs confirmation",
-   "feasibility_reason": "Posting a balanced EUR operation is documented, but the status mapping (C1, H21), foreign-currency conversion (C15) and numbering (C7) need answers before the behaviour is final.",
+   "feasibility_reason": "Posting a balanced EUR operation is documented, but status mapping (C1, H21), foreign-currency conversion (C15) and numbering (C7) need answers first.",
    "considerations": [
     {
-     "text": "Horus keeps API entries unconfirmed by default so the accountant can review them, while Chift's default status is 'posted'; which one applies is a Chift decision (C1).",
+     "text": "Horus keeps API entries unconfirmed by default for accountant review, while Chift defaults to 'posted'; which applies is a Chift decision (C1).",
      "basis": "F"
     },
     {
-     "text": "A confirmed operation cannot be deleted through the API; an unconfirmed operation pushed through the API can.",
+     "text": "A confirmed operation cannot be deleted through the API; an unconfirmed one pushed through the API can.",
      "basis": "F"
     },
     {
-     "text": "An update creates a new Horus entry with a new id, so clients should reconcile on journal and number, not on the id alone.",
+     "text": "An update creates a new entry with a new id, so consumers should reconcile on journal and number, not the id alone.",
      "basis": "D"
     },
     {
-     "text": "No idempotency key is documented, so a timed-out create is checked before any retry; this check works only when a number was supplied.",
+     "text": "No idempotency key is documented, so a timed-out create is checked before any retry; the check works only when a number was supplied.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "Original currency and exchange rate: Horus operations store EUR amounts only, so the source currency cannot be read back from Horus.",
+    "Original currency and rate: operations store EUR only, so the source currency cannot be read back.",
     "Alphanumeric operation numbers: Horus numbers are numeric, so such references cannot be stored as the entry number."
    ]
   },
@@ -482,23 +437,23 @@
    "horus_support": [
     "GET /folders.info (analytics module enabled, cached)"
    ],
-   "how_it_works": "A Horus cost schema is an analytical dimension, which is the Chift analytic plan; one call returns all of them, at most eight per folder. The connector maps each list-type schema to a plan and cuts the page itself.",
-   "documented": "cost-schemas.list returns Id, SearchKey, Heading, CostSectionType (List or Free) and MasterCostSchema for every schema of the folder (F). A folder can use up to 8 cost schemas (F). Analytics depend on the folder's analytics module, WithAnalytics (F).",
+   "how_it_works": "A Horus cost schema is an analytic dimension, the Chift analytic plan; one call returns all of them, at most eight per folder. The connector maps each list-type schema to a plan and cuts the page itself.",
+   "documented": "cost-schemas.list returns id, code, name, type (List or Free) and MasterCostSchema for every schema of the folder. A folder can use up to 8 cost schemas. Analytics depend on the folder's analytics module (WithAnalytics).",
    "depends_on_assumption": [
-    "parent_id is taken from MasterCostSchema; whether 'master' means a parent plan is not documented.",
-    "Proposal: Free-type schemas, which have no list of values, are not returned in v1, pending Chift decision C9.",
-    "Proposal: a folder without the analytics module returns an empty list rather than an error."
+    "parent_id is taken from MasterCostSchema; whether 'master' means a parent plan is undocumented.",
+    "Proposal (C9): Free-type schemas, which have no list of values, are not returned in v1.",
+    "Proposal: a folder without the analytics module returns an empty list, not an error."
    ],
    "needs_confirmation": [
-    "Chift: should Free-type dimensions be listed or hidden, given they have no enumerable analytic accounts (C9)?",
-    "Horus: what MasterCostSchema means, and what the cost endpoints return for a folder without analytics (H13)."
+    "Chift: list or hide Free-type dimensions, which have no enumerable analytic accounts (C9)?",
+    "Horus: what MasterCostSchema means, and what cost endpoints return for a folder without analytics (H13)."
    ],
    "not_concluded": [],
    "feasibility": "Confirmed",
    "feasibility_reason": "One documented call returns every required plan field; parent_id and the Free-dimension policy are minor open points that do not affect the list itself.",
    "considerations": [
     {
-     "text": "Horus calls analytics 'cost' analytics: a plan is a cost schema (e.g. DEPARTMENT) and an analytic account is a cost section (e.g. OFFICE).",
+     "text": "Horus calls analytics 'cost' analytics: a plan is a cost schema (e.g. DEPARTMENT), an analytic account is a cost section (e.g. OFFICE).",
      "basis": "F"
     },
     {
@@ -506,7 +461,7 @@
      "basis": "D"
     },
     {
-     "text": "Proposal: the plan id is the Horus schema GUID; Horus posts by schema code, so invoice and operation creation translate the id through a cached lookup.",
+     "text": "Proposal: the plan id is the Horus schema GUID; Horus posts by schema code, so write routes translate the id through a cached lookup.",
      "basis": "A"
     }
    ],
@@ -526,25 +481,25 @@
     "GET /folders.info (analytics module enabled, cached)",
     "POST /cost-histories.list (period balances, optional only)"
    ],
-   "how_it_works": "Horus lists cost sections one schema at a time, so the connector reads the schemas first, then calls the section list once per list-type schema (at most eight) and merges the results into one Chift page. Inactive sections are requested explicitly, because the Chift route returns all analytic accounts.",
-   "documented": "cost-sections.list requires FolderId and CostSchemaId and returns Id, SearchKey, Heading, Inactive and the parent CostSchema for each section (F). Inactive sections are left out unless IncludeInactive is set (F). Only List-type schemas hold cost sections (F).",
+   "how_it_works": "Horus lists cost sections one schema at a time, so the connector reads the schemas, calls the section list once per list-type schema (at most eight) and merges them into one Chift page. Inactive sections are requested explicitly, since the Chift route returns all accounts.",
+   "documented": "cost-sections.list requires FolderId and CostSchemaId and returns id, code, name, Inactive flag and parent schema per section. Inactive sections are left out unless IncludeInactive is set. Only List-type schemas hold cost sections.",
    "depends_on_assumption": [
-    "Proposal: balance, credit and debit are returned empty rather than 0, because Horus stores no balance and 0 would read as a real zero (C4)."
+    "Proposal (C4): balance, credit and debit are returned empty rather than 0, since Horus stores no balance and 0 would read as real."
    ],
    "needs_confirmation": [
-    "Chift: return balances empty, as 0, or computed over the current fiscal year, and on confirmed entries only or all (C4)?",
-    "Horus: is a section code unique per folder or only per plan, since the guide and the posting reference differ (H7)?",
-    "Horus: what IsLocked and IsDefault mean on a section, and whether locked sections should show as inactive (H13)."
+    "Chift: balances empty, 0, or computed over the current fiscal year, on confirmed entries only or all (C4)?",
+    "Horus: is a section code unique per folder or only per plan? The guide and posting reference differ (H7).",
+    "Horus: meaning of IsLocked and IsDefault on a section, and should locked sections show as inactive (H13)?"
    ],
    "not_concluded": [
-    "Computed balances: the sign of cost-history balances and the response shape are undocumented, and unconfirmed entries cannot be excluded on that endpoint.",
-    "Whether child sections appear at top level in the section list; the section hierarchy has no Chift field."
+    "Computed balances: sign and response shape of cost histories are undocumented, and unconfirmed entries cannot be excluded there.",
+    "Whether child sections appear at top level in the section list; the hierarchy has no Chift field."
    ],
    "feasibility": "Confirmed",
-   "feasibility_reason": "Listing every analytic account of every plan is documented as a bounded loop over at most eight plans; only computed balances, if Chift wants them (C4), are not yet concluded.",
+   "feasibility_reason": "Listing every analytic account of every plan is documented, via a loop over at most eight plans; only computed balances, if Chift wants them (C4), remain open.",
    "considerations": [
     {
-     "text": "One Chift call needs up to nine Horus calls (one schema list plus one section list per plan), so the result is cached per folder, as Horus recommends for analytics.",
+     "text": "One Chift call needs up to nine Horus calls (schema list plus one section list per plan), so results are cached per folder, as Horus recommends.",
      "basis": "D"
     },
     {
@@ -552,17 +507,17 @@
      "basis": "D"
     },
     {
-     "text": "Proposal: the analytic account id is the Horus section GUID; Horus posts by code, so invoice and operation creation translate ids through the same cached list.",
+     "text": "Proposal: the analytic account id is the Horus section GUID; Horus posts by code, so write routes translate ids through the same cached list.",
      "basis": "A"
     },
     {
-     "text": "The section lists have no 'modified after' filter, so a section created or deactivated in Horus Office appears only after the cache refreshes.",
+     "text": "Section lists have no 'modified after' filter, so a section created or deactivated in Horus Office appears only after the cache refreshes.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "balance, credit, debit: not stored per analytic account; computable only over a period the Chift route does not carry.",
-    "currency: cost sections have no currency; empty unless balances are computed, then EUR by assumption.",
+    "balance, credit, debit: not stored per account; computable only over a period the route does not carry.",
+    "currency: cost sections have none; empty unless balances are computed, then EUR by assumption.",
     "Section hierarchy and categories: no Chift field; the list is flattened."
    ]
   },
@@ -580,58 +535,48 @@
     "GET /book-entries.info (optional enrichment, off by default)",
     "POST /account-histories.list (fallback if lists are incomplete)"
    ],
-   "how_it_works": "Clients: the open sales invoices list gives each open invoice or credit note with a native open amount, joined with customers.outstanding for the account and matching number. Suppliers: there is no purchase equivalent, so open items come from suppliers.outstanding ledger lines and the connector computes amount and open amount from debit and credit.",
-   "documented": "The guides name customers.outstanding, suppliers.outstanding and invoices.sales.outstanding.list as the open-item endpoints, and outstanding items are the lines 'not matched yet'. The sales list returns open sales invoices and credit notes with total, open amount, invoice-currency amounts, due date, payment remark, transaction type, daybook and a ConfirmedOnly filter. customers.outstanding and suppliers.outstanding return open ledger lines with account, daybook code, number, dates, debit, credit, matching detail and confirmed flag, but no open-amount field. Omitted filters are ignored (guide: Making requests).",
+   "how_it_works": "Clients: the open sales invoices list gives each open invoice or credit note with a native open amount, joined with customers.outstanding for account and matching. Suppliers: with no purchase equivalent, open items come from suppliers.outstanding ledger lines, amounts computed from debit and credit.",
+   "documented": "The guides name these three as the open-item endpoints (lines 'not matched yet'). The sales list gives total, open amount, invoice currency and due date; the ledger lists give open lines with debit, credit and matching, but no open amount.",
    "depends_on_assumption": [
-    "Without a company filter, the lists return the open items of every partner in the folder, complete and uncapped (H8).",
-    "Supplier open amount equals the line amount for an unmatched line; partly matched groups are netted only if Horus returns them (Proposal, D5).",
-    "Positive means owed (receivable for clients, payable for suppliers); credit notes and payments are negative (Proposal, D5).",
-    "Ledger amounts are in EUR: supplier items come back in EUR with rate 1; client items in invoice currency when given (D4).",
-    "Credit-note rows of the sales list take their sign from the transaction type, as no documented example shows a credit note.",
-    "reference is read from the partner-line comment, then entry remarks; the location is undocumented (Proposal, D3; H9)."
+    "Without a company filter, the lists return every partner's open items, complete and uncapped (H8).",
+    "Proposal (D5): positive means owed, credit notes and payments negative; supplier open amount equals the line amount, partly matched groups netted if returned.",
+    "Proposal (D4, D3): supplier items in EUR at rate 1, client items in invoice currency; reference read from the line comment (H9)."
    ],
    "needs_confirmation": [
-    "Horus: without a company filter, do the ledger lists cover all partners, and do they return partially matched lines (H8)?",
-    "Horus: currency of ledger debit and credit, and direction of CurrencyRate (H4).",
-    "Horus: volume limits and timeouts for whole-folder open-item reads (H5); do SumDebit/SumCredit cover exactly the returned lines (H23)?",
-    "Chift: sign convention (balance or document view) and allocation inside a partly matched group (C5).",
-    "Chift: one item per due date or per invoice, and whether unallocated payments are items (C17).",
-    "Chift: should unposted payments reduce open amounts when unposted_allowed=false (C10)?"
+    "Horus: do the ledger lists cover all partners without a company filter, and return partially matched lines (H8)? Ledger currency and rate direction (H4)?",
+    "Horus: volume limits and timeouts for whole-folder reads (H5); do SumDebit/SumCredit cover exactly the returned lines (H23)?",
+    "Chift: sign convention and partial-match allocation (C5); one item per due date or invoice, and unallocated payments (C17); unposted payments (C10)."
    ],
    "not_concluded": [
-    "original_document for items carried forward from a prior year: IsReport is undefined and no link to the original document exists.",
-    "Whether the debit/credit signs in the outstanding examples are real or placeholders; the supplier example shows a debit on a supplier line.",
-    "How partially paid supplier invoices behave if Horus omits partly matched lines; a test in a test folder must choose the fallback."
+    "original_document for items carried forward from a prior year: IsReport is undefined and no link to the original exists.",
+    "Whether the debit/credit signs in the documented examples are real; the supplier example shows a debit on a supplier line.",
+    "How partially paid supplier invoices behave if Horus omits partly matched lines; a test-folder check must choose the fallback."
    ],
    "feasibility": "Needs confirmation",
-   "feasibility_reason": "Client open items are native, but folder-wide completeness and supplier open amounts depend on undocumented partial-matching behaviour that Horus must confirm (H8).",
+   "feasibility_reason": "Client open items are native, but folder-wide completeness and supplier open amounts depend on undocumented partial-matching behaviour Horus must confirm (H8).",
    "considerations": [
     {
-     "text": "The two sides differ: Horus gives clients a native open amount, while supplier open amounts are computed by the connector from ledger lines.",
+     "text": "The two sides differ: clients get a native open amount from Horus, while supplier open amounts are computed by the connector from ledger lines.",
      "basis": "D"
     },
     {
-     "text": "The open-item endpoints have no date, paging or modified-after filter: every request reads all open items of the folder and the connector pages them.",
+     "text": "No date, paging or modified-after filter: every request reads all open items of the folder and the connector pages them.",
      "basis": "D"
     },
     {
-     "text": "Entries left unconfirmed (the Horus default, and the proposed review mode) count as unposted items until the accountant confirms them, so they appear only with unposted_allowed=true.",
+     "text": "Unconfirmed entries (the Horus default and the proposed review mode) count as unposted until confirmed, so they appear only with unposted_allowed=true.",
      "basis": "D"
     },
     {
-     "text": "Item ids are ledger line ids and are expected to change when the source entry is updated; consumers should re-read before matching.",
-     "basis": "D"
-    },
-    {
-     "text": "Matching numbers are unique per partner, not per folder, so they must be read together with partner_id.",
+     "text": "Item ids are ledger line ids, expected to change when the source entry is updated; matching numbers are unique per partner, not per folder.",
      "basis": "D"
     }
    ],
    "not_mappable": [
-    "Supplier amounts in the invoice currency: ledger lines carry a currency code but no foreign amount, so items come back in EUR with rate 1 (assumption D4).",
-    "Several due dates per item and a payment method per due date: Horus has one due date per line and no readable payment method.",
-    "original_document.id for carried-forward items: no link to the prior-year document; returned null.",
-    "journal_type describes the journal, not the document: a credit note in a sales journal appears as customer_invoice; the sign tells them apart."
+    "Supplier amounts in invoice currency: ledger lines carry a currency code but no foreign amount; EUR at rate 1 (D4).",
+    "Several due dates and payment methods per item: Horus has one due date per line and no readable payment method.",
+    "original_document.id for carried-forward items: no link to the prior-year document; null.",
+    "journal_type is per journal: a credit note in a sales journal shows as customer_invoice; the sign tells them apart."
    ]
   }
  ],
@@ -2364,138 +2309,132 @@
  "lq": {
   "differences": [
    {
-    "chift": "Client and supplier are separate resources. A client can be an individual (first_name, last_name, is_company = false) and carries several typed addresses (main, delivery, invoice), plus mobile, internal notes and currency fields.",
-    "horus": "Each third party is one 'company' record, flagged IsCustomer and/or IsSupplier. companies.new requires SearchKey (unique within the folder), Name, IsVatLiable, LanguageCode and CountryCode. It holds one address (Address, Address2, ZipCode, Locality) and has no person, mobile or notes fields.",
-    "why_it_matters": "Client creation has to generate a search key that Chift never sends and derive VAT liability, language and country. force_merge becomes 'add the customer flag to the existing supplier'. Extra addresses, person fields and is_company are lost, and every partner reads back as a company.",
+    "chift": "Clients and suppliers are separate resources. A client can be an individual (first and last name, is_company false) with several typed addresses, a mobile number and internal notes.",
+    "horus": "Each third party is one 'company', flagged customer and/or supplier. companies.new requires a search key (unique per folder), VAT liability, language and country. One address; no person, mobile or notes fields.",
+    "why_it_matters": "Client creation must generate a search key and derive fields Chift never sends. force_merge means adding the customer flag to an existing supplier. Extra addresses and person fields are lost; every partner reads back as a company.",
     "basis": "F"
    },
    {
-    "chift": "A journal has a journal_type (customer_invoice, customer_refund, supplier_invoice, supplier_refund, financial_operation, miscellaneous_operation, unknown). On an entry, invoice_type gives the document kind.",
-    "horus": "A daybook has a numeric Type, and that Type decides the posting endpoint: 200/250 sales and sales credit notes, 100/150 purchases and purchase credit notes, 600 miscellaneous operations. No posting endpoint is documented for cash, temporary, system, budget or external daybooks. Invoice vs credit note is a separate Type 0/1 on the invoice.",
-    "why_it_matters": "Invoice and operation creation must pick the daybook from invoice_type (proposal: the credit-note daybook, with a fallback). Invoice retrieval must read both sibling daybook types. journal_type describes the daybook, not every entry in it.",
+    "chift": "Every invoice line requires tax_code, the id of a VAT code in the accounting software; GET vat-codes lists those codes.",
+    "horus": "No VAT-code list and no VAT code on write. Each line carries rate, origin and type (plus kind and condition on purchases), valid only as listed in two published spreadsheets. Reads return VatCode/VatHeading strings of undocumented meaning.",
+    "why_it_matters": "The connector must own a VAT-code list per folder legislation (BE/LU) and direction, decoding codes on write and rebuilding them on read (Proposal, C2). Some purchase codes come back empty on read, because the VAT kind is not returned.",
     "basis": "F"
    },
    {
-    "chift": "tax_code is required on every invoice line. It is the id of a VAT code in the accounting software, and GET vat-codes lists those codes.",
-    "horus": "Horus has no VAT-code list endpoint and accepts no VAT code on write. Each line carries TaxRate, TaxOrigin and TaxType (purchases add TaxKind, TaxCondition and TaxConditionValue), and only the combinations in two published spreadsheets, one per direction, each with a BE and an LU sheet, are valid. On read, lines return VatCode/VatHeading strings whose meaning is undocumented, and no TaxKind.",
-    "why_it_matters": "The connector has to own a VAT-code catalogue per folder legislation and direction, with synthetic ids decoded on write and encoded on read. Some purchase lines cannot be matched to a single code on read, so their tax_code comes back null.",
+    "chift": "Invoices are documents (header, lines, type, payments, due dates, open amount), read by invoice_type. Journals carry a journal_type such as customer_invoice or customer_refund.",
+    "horus": "Posted invoices become book entries (headers, listed per daybook and month) and ledger lines. The daybook type decides the posting endpoint. Entries do not say invoice or credit note; only open sales invoices are listed as documents.",
+    "why_it_matters": "Invoice retrieval is rebuilt from several endpoints, and telling invoices from credit notes rests on an assumption (H2). Client open amounts are native; supplier open amounts must be computed from unmatched ledger lines.",
     "basis": "F"
    },
    {
-    "chift": "Invoices and outstanding items are documents: a header, lines, type, payments, due dates and open amount.",
-    "horus": "Posted invoices become book entries (headers, listed per daybook and month period) and account-history lines (lines, VAT, analytics, matching). The only document-level list is invoices.sales.outstanding.list: open sales invoices and credit notes, with OpenAmount. Purchases have no equivalent, and book entries do not say whether they are an invoice or a credit note.",
-    "why_it_matters": "Invoice retrieval has to be rebuilt from several endpoints, and telling invoices from credit notes on read rests on an assumption. Client open amounts are native, but supplier open amounts must be computed by the connector from unmatched ledger lines.",
+    "chift": "Per line and per plan, whole-number percentages totalling 100 % per plan. Miscellaneous operations take one analytic account per line.",
+    "horus": "Cost lines are amounts on combinations of cost sections (one per cost schema) and must sum exactly to the line base amount. A folder has at most 8 cost schemas; Free-type schemas have no listable sections.",
+    "why_it_matters": "Percentages must become amounts on combinations and back (Proposal: product of per-plan percentages, C9). Small amounts may read back with a slightly different split. Free-type dimensions are hidden (Proposal, C9).",
     "basis": "F"
    },
    {
-    "chift": "For each line and each plan, whole-number percentages that add up to 100 % per plan. Miscellaneous operations take one analytic account per line.",
-    "horus": "Cost lines are amounts allocated to combinations of cost sections (one value per cost schema) and must add up exactly to the line base amount. A folder has at most 8 cost schemas. Free-type schemas (900) have no listable sections.",
-    "why_it_matters": "A converter has to turn independent per-plan percentages into amounts on combinations and back (proposal: product of percentages, largest-remainder rounding). Small amounts can read back with a different split. Free-type dimensions are hidden in v1 (proposal, C9).",
+    "chift": "status defaults to 'posted'. invoice_number and operation_number are free strings, generated by the software when missing, and recommended for idempotency.",
+    "horus": "API entries are unconfirmed by default so the accountant can review them. Numbers are numeric and may be 0 only while unconfirmed. Automatic numbering works only on confirmed miscellaneous, bank and financial operations, not invoices.",
+    "why_it_matters": "Chift's default conflicts with Horus's review-by-default design, so a posting-mode rule is needed (C1). An invoice sent without a number cannot be confirmed (C7), and numbers such as INV-2024/001 cannot be stored as the number.",
     "basis": "F"
    },
    {
-    "chift": "status defaults to 'posted'. invoice_number and operation_number are free strings; when missing, they are generated 'according to the system's numbering rules', and they are recommended for idempotency.",
-    "horus": "Entries pushed through the API are unconfirmed by default (Confirmed = false) so the accountant can review them. Number is numeric, required, and may be 0 only while the entry is unconfirmed. Automatic numbering (AutoGenerateNumber, confirmed entries only) exists for miscellaneous, bank and financial operations, not for invoices.",
-    "why_it_matters": "Chift's default 'posted' collides with Horus's review-by-default design, so the connector needs a posting-mode rule. It cannot confirm an invoice sent without a number. Non-numeric numbers must be rejected or moved to reference.",
+    "chift": "A create returns the full object with a stable id, which consumers use to reconcile.",
+    "horus": "A create returns only an Id. Updating an invoice or operation creates a new book-entry Id. No idempotency key is documented, and invoices, companies and accounts have no delete endpoint.",
+    "why_it_matters": "Write routes need a read-back to build the response, and a best-effort duplicate check before any create or retry. Ids change after an edit, so consumers should reconcile on journal and number.",
     "basis": "F"
    },
    {
-    "chift": "A create call returns the full object with a stable id, and consumers reconcile by that id.",
-    "horus": "Creation returns only {Id}. Every invoice or operation update creates a new book-entry Id (full replacement; the original attachment is deleted). No idempotency key is documented, and there is no delete endpoint for invoices, companies or accounts.",
-    "why_it_matters": "Write routes need a read-back to build the Chift response, and a best-effort duplicate check before every create and before any retry. An invoice id changes after an edit, so consumers must reconcile on journal and number.",
-    "basis": "F"
+    "chift": "Lists are paginated (page, size, total) and filtered by day-level dates, updated_after and type.",
+    "horus": "No list has paging parameters, and ledger reads take month periods. ModifiedAfter exists only on companies.list, book-entries.list and account-histories.list. No deletion signal is documented.",
+    "why_it_matters": "The connector reads full results and emulates paging, totals and day filters, assuming lists are complete (deduction, H5). It needs a cache between page calls (C14) and periodic full re-syncs to catch deletions and replaced ids.",
+    "basis": "D"
    },
    {
-    "chift": "Lists are paginated (page, size, total) and filtered by day-level date_from/date_to, updated_after and type.",
-    "horus": "No list request has paging parameters. Ledger reads take month periods (StartMonth, StartYear, EndMonth, EndYear). ModifiedAfter exists only on companies.list, book-entries.list and account-histories.list. No deletion signal is documented.",
-    "why_it_matters": "The connector fetches full results and emulates paging, totals and day-level filters. That lists return complete results is a deduction, unverified on large folders (H5). The design needs a cache between page calls (C14) and a periodic full re-sync to catch deletions and replaced ids.",
-    "basis": "F"
-   },
-   {
-    "chift": "A consumer connection with folders selected at activation. folder_id is required when several folders are enabled, and requests to unselected folders must be rejected.",
-    "horus": "Each license (accounting firm or SMB) has its own database and API URL, returned at the end of OAuth, and the user picks one license. What the API shows depends on that user's access in Horus. Almost every call needs a FolderId, but calls by Id take none.",
-    "why_it_matters": "The api_url must be stored per connection. One grant covers every folder the user can access (deduction), so either the connector or Chift's platform (C12) must enforce the selected folders and check the folder on Id-only calls.",
-    "basis": "F"
+    "chift": "One consumer connection, with folders selected at activation; requests to folders that were not selected must be rejected.",
+    "horus": "Each licence has its own database and API URL, returned at the end of OAuth. What the API shows depends on the authorising user's access. Calls by Id take no folder.",
+    "why_it_matters": "The API URL is stored per connection. One grant appears to cover every folder the user can access (deduction), so the connector or Chift's platform must enforce the selected folders (C12), including on calls by Id.",
+    "basis": "D"
    }
   ],
   "limitations": [
    {
     "title": "VAT codes exist only as published tax combinations",
-    "what": "Horus accepts no VAT code on write and has no VAT-code list. A line is valid only if its rate, origin and type (plus kind and condition on purchases) match a combination listed in two spreadsheets, each with a BE and an LU sheet (F). The TaxOrigin enums in the API reference miss the Luxembourg codes used in the files, and TaxKind is not returned on read (F).",
-    "implication": "GET vat-codes and every tax_code become connector-owned data. Luxembourg folders and folders that are not VAT liable remain uncertain. Some purchase VAT codes come back empty on read. If the files are incomplete, codes that clients need cannot be posted.",
-    "handling": "Proposal: build the catalogue from the files, with one list per folder legislation (BE/LU) and direction and one synthetic id grammar (D2). Reject a code outside the folder's list with 422 before calling Horus. Return tax_code = null on read when the match is ambiguous. Book VAT as sent (OverrideTaxAmounts = true, D16). Descoping trigger: a reduced VAT-code list if needed codes cannot be expressed.",
-    "decision_owner": "Both: Horus confirms that the files are current and which origin list is authoritative (H1); Chift accepts the synthetic catalogue and the VAT-amount policy (C2).",
+    "what": "Horus accepts no VAT code and has no VAT-code list. A line's rate, origin and type (plus kind and condition on purchases) must match a published combination (F). The API reference omits Luxembourg origins, and the VAT kind is not returned on read (F).",
+    "implication": "GET vat-codes and every tax_code become connector-owned data. Luxembourg and non-VAT-liable folders remain uncertain, some purchase codes come back empty on read, and codes missing from the files cannot be posted.",
+    "handling": "Proposal: one VAT-code list per folder legislation (BE/LU) and direction, built from the files. Codes not on the folder's list are rejected before calling Horus; ambiguous codes return null on read. Descoping trigger: a reduced VAT-code list.",
+    "decision_owner": "Horus confirms the files (H1); Chift accepts the synthetic list and the VAT-amount policy (C2).",
     "basis": "F",
     "routes": "Invoice creation, invoice retrieval, VAT codes (dependency)"
    },
    {
     "title": "'Posted' and numbering do not map one to one",
-    "what": "Entries pushed through the API are unconfirmed by default, for accountant review. Number is numeric, required, and may be 0 only while the entry is unconfirmed, and invoices have no automatic numbering (F). Whether every licence and user type may set Confirmed = true is not documented (?).",
-    "implication": "A request with Chift's default status 'posted' may come back as 'draft'. An invoice to be confirmed without an invoice_number cannot be posted as confirmed. Numbers such as INV-2024/001 are rejected. An entry pushed without a number cannot be found again after an accountant edit.",
-    "handling": "Proposal: a posting mode chosen per connection, either review (default; Confirmed = false) or direct ('posted' sent as Confirmed = true). The response always reports the status actually stored. An invoice without a number is pushed for review and returned as a draft. Non-numeric numbers are rejected with 422, and the number shown to customers goes in reference.",
-    "decision_owner": "Chift decides (C1, C7); Horus confirms confirmation rights and numbering behaviour (H21, H3).",
+    "what": "API entries are unconfirmed by default, for accountant review. Numbers are numeric and may be 0 only while unconfirmed, and invoices have no automatic numbering (F). Whether every licence and user may confirm entries is undocumented (?).",
+    "implication": "A 'posted' request may be stored as a draft. An invoice to be confirmed without a number cannot be posted as confirmed, and numbers such as INV-2024/001 are rejected. Unnumbered entries cannot be found again after an accountant edit.",
+    "handling": "Proposal: a posting mode per connection, review (default; entries unconfirmed) or direct ('posted' confirmed), always reporting the status actually stored. An invoice without a number is pushed for review and returned as a draft; the printed number goes in reference.",
+    "decision_owner": "Chift decides (C1, C7); Horus confirms confirmation rights and numbering (H21, H3).",
     "basis": "F",
     "routes": "Invoice creation, miscellaneous operation creation, invoice retrieval, outstanding items"
    },
    {
     "title": "No documented paging, limits or timeouts",
-    "what": "No Horus list request has paging parameters, ledger reads are bounded by month, and no rate, size or time limit is documented (F: the documentation is silent). That lists return complete result sets is a deduction (D).",
-    "implication": "Unless results are cached between calls, every Chift page may re-read the full period. Behaviour on large accounting-firm folders, including any silent truncation, is unverified. Incremental reads filter headers, but ledger lines are still read per period, so polls stay costly.",
-    "handling": "Proposal: a per-folder reference cache plus a short-lived result cache (subject to C14); a bounded default window for invoice retrieval (current fiscal year, C11); a volume test on the largest test folder as the exit criterion of phase 1. Descoping trigger: a mandatory date window or journal filter on invoice retrieval.",
-    "decision_owner": "Both: Horus states its limits (H5); Chift decides on caching, timeouts and default windows (C14, C11).",
+    "what": "No Horus list has paging parameters, ledger reads are bounded by month, and no rate, size or time limit is documented (F). That lists return complete results is a deduction (D).",
+    "implication": "Without a cache, each Chift page may re-read the whole period. Behaviour on large accounting-firm folders, including any silent truncation, is unverified, and incremental polls still read ledger lines per period.",
+    "handling": "Proposal: cache reference data per folder and results between page calls (C14), default invoice retrieval to the current fiscal year (C11), and run a volume test on the largest test folder. Descoping trigger: a mandatory date window on invoice retrieval.",
+    "decision_owner": "Horus states its limits (H5); Chift decides caching, timeouts and default windows (C14, C11).",
     "basis": "D",
     "routes": "All list routes; most exposed: invoice retrieval, outstanding items"
    },
    {
     "title": "Invoices are rebuilt from the ledger, without the document type",
-    "what": "There is no general invoice list. Headers come from book-entries.list per daybook and period, lines from account-histories.list, and neither exposes invoice vs credit note (F). TransactionType exists only on open sales items (F).",
-    "implication": "This is the most complex read route, with several Horus calls per request. A credit note keyed into the sales daybook of a folder that also has a credit-note daybook comes back as an invoice with negative amounts. Line quantity and unit price are not stored, so on read a line has quantity 1 (proposal).",
-    "handling": "Proposal: the daybook type decides; the sign of the partner line is used only in folders without a credit-note daybook; TransactionType is a consistency check, not an override (D1). The rule stays labelled as an assumption until Horus exposes the type.",
-    "decision_owner": "Both: Horus on credit-note rules and the type on read (H2); Chift chooses which misclassification is acceptable (C5).",
+    "what": "No endpoint lists invoices. Headers come from book-entries.list per daybook and period, lines from account-histories.list, and neither says invoice or credit note (F). The document type appears only on open sales items (F).",
+    "implication": "The most complex read route, with several Horus calls per request. A credit note keyed into a sales daybook, in a folder that also has a credit-note daybook, reads back as an invoice with negative amounts. Quantity and unit price are not stored.",
+    "handling": "Proposal: the daybook type decides; the amount sign is used only in folders without a credit-note daybook; the open-items type serves as a consistency check, not an override. The rule stays an assumption until Horus exposes the type.",
+    "decision_owner": "Horus on credit-note rules and the type on read (H2); Chift on acceptable misclassification (C5).",
     "basis": "F",
     "routes": "Invoice retrieval; also outstanding items and journals"
    },
    {
     "title": "Supplier open amounts are computed, not read",
-    "what": "Client open items come with a native OpenAmount from invoices.sales.outstanding.list (F). Suppliers have only ledger lines (suppliers.outstanding). Two points are undocumented (?): whether partially matched lines are returned, and whether every partner is returned when CompanyIds is omitted.",
-    "implication": "Payables are complete only if Horus returns partially matched lines, or if a fallback read is used. Otherwise every supplier balance can silently drop partially paid invoices, and this is a Task B route.",
-    "handling": "Proposal: open amount = Credit − Debit of each unmatched line. Partially matched groups are netted if Horus returns them (remainder allocated oldest due date first, C5). Fallback: read the supplier concentration accounts with account-histories.list. Control check against Horus's SumDebit/SumCredit. First test case: one partially paid purchase invoice and one partially paid sales invoice.",
-    "decision_owner": "Horus on completeness and partial matching (H8); Chift on sign, allocation and item granularity (C5, C17).",
+    "what": "Client open items come with a native open amount (F). Suppliers have only ledger lines from suppliers.outstanding (F). Whether partially matched lines are returned, and whether every supplier is returned without a company filter, is undocumented (?).",
+    "implication": "If partially matched lines are missing, supplier balances silently drop partly paid invoices. This affects a Task B route.",
+    "handling": "Proposal: an unmatched line is open for its full amount; partly matched groups are netted if Horus returns them; otherwise supplier ledger lines are read as a fallback. First test: one partly paid purchase invoice and one partly paid sales invoice.",
+    "decision_owner": "Horus on completeness and partial matching (H8); Chift on signs and allocation (C5, C17).",
     "basis": "D",
     "routes": "Outstanding items (Task B)"
    },
    {
     "title": "No idempotency key, and ids change on update",
-    "what": "A create returns only an Id, and no idempotency key is documented. Invoice and operation updates create a new book-entry Id. Invoices, companies and accounts have no delete endpoint (F).",
-    "implication": "A timeout on create can lead to a duplicate that cannot be deleted. Every create response needs a read-back. Ids kept by client applications stop working after an edit, and an entry pushed without a number has no business key to find it again.",
-    "handling": "Proposal: search before every create (VAT number, external reference, account number, document number) and never retry blindly. When the record has no key, return an 'outcome unknown' error. Consumers reconcile on journal and number, and should always send a number.",
-    "decision_owner": "Chift on the duplicate policy and errors (C6, C7); Horus on duplicate numbers and commits after a timeout (H3).",
+    "what": "A create returns only an Id, and no idempotency key is documented. Updating an invoice or operation creates a new Id. Invoices, companies and accounts cannot be deleted through the API (F).",
+    "implication": "A timed-out create can leave a duplicate that cannot be deleted. Every create needs a read-back to build the Chift response. Ids stored by client applications stop working after an edit.",
+    "handling": "Proposal: best-effort duplicate check before every create and any retry (VAT number, external reference, account or document number); never retry blindly; return an 'outcome unknown' error when the record has no key. Consumers should always send a number.",
+    "decision_owner": "Chift on the duplicate policy and errors (C6, C7); Horus on duplicates and commits after a timeout (H3).",
     "basis": "F",
     "routes": "All write routes; invoice retrieval"
    },
    {
     "title": "Currency support differs by object",
-    "what": "Invoices accept CurrencyCode and CurrencyRate when the folder allows currencies, but miscellaneous-operation lines have no currency field (F). The currency of ledger amounts on read is not documented, and invoice-currency amounts appear only on open sales items (F).",
-    "implication": "Foreign-currency operations are stored in euro and lose their original currency. On read, a foreign-currency sales invoice may switch from its own currency to euro once paid, and purchase invoices always come back in euro.",
-    "handling": "Proposal: never pair euro amounts with a foreign currency code (D4). Convert foreign-currency operations at the supplied rate, as Chift's contract describes, with the rate required; who converts is C15. Verify with one foreign-currency invoice in the test folder. Chift may prefer one stable euro view (C16).",
-    "decision_owner": "Both: Horus on the currency of ledger amounts (H4); Chift on conversion and representation (C15, C16).",
+    "what": "Invoices accept a currency code and rate when the folder allows currencies; miscellaneous-operation lines have no currency field (F). The currency of ledger amounts on read is undocumented, and invoice-currency amounts appear only on open sales items (F).",
+    "implication": "Foreign-currency operations are stored in euro without their original currency. On read, a foreign-currency sales invoice may switch to euro once paid, and purchase invoices come back in euro.",
+    "handling": "Proposal: convert foreign-currency operations at the exchange rate that Chift's contract requires, rather than reject them; never pair euro amounts with a foreign currency code. Verify with one foreign-currency invoice in the test folder.",
+    "decision_owner": "Horus on the currency of ledger amounts (H4); Chift on who converts and how currency is shown (C15, C16).",
     "basis": "F",
     "routes": "Miscellaneous operation creation, invoice retrieval, outstanding items, invoice creation (response)"
    },
    {
     "title": "Third-party master data is narrower than Chift's client",
-    "what": "companies.new requires SearchKey, IsVatLiable, LanguageCode and CountryCode; beyond 'unique within the folder', the search-key rules are undocumented. A company holds one address and no person, mobile or notes fields, and a second company with the same VAT number is created only when AllowDuplicateVatNumber is true (default false) (F).",
-    "implication": "The connector invents the customer code that accountants see. Extra addresses and person fields are lost. Duplicate handling must be defined for VAT matches and for clients without a VAT number or external reference.",
-    "handling": "Proposal: generate the search key from the name (uppercase, accents removed, truncated, numeric suffix on collision, D10). Keep the main address, else the invoice address. Run a duplicate pre-check that returns 'already exists' with the existing id, and use force_merge for existing suppliers. Apply the same rules to partner_info.",
+    "what": "companies.new requires a search key, VAT liability, language and country; search-key rules beyond uniqueness are undocumented. A company holds one address and no person, mobile or notes fields, and a duplicate VAT number is refused by default (F).",
+    "implication": "The connector invents the customer code that accountants see. Extra addresses and person fields are lost. A duplicate policy is needed, including for clients without a VAT number or external reference.",
+    "handling": "Proposal: generate the search key from the name, with a numeric suffix on collision; keep the main address, else the invoice address; pre-check duplicates and return the existing id; use force_merge for existing suppliers.",
     "decision_owner": "Chift (C8, C3, C6); Horus on search-key rules and field meanings (H7, H11).",
     "basis": "F",
-    "routes": "Client creation (Task B), invoice creation (partner_info), supplier creation (dependency)"
+    "routes": "Client creation (Task B), invoice creation (partner_info)"
    },
    {
     "title": "Testing runs on real data",
-    "what": "Requests run against the license's real database; write tests need a test license or test folder, and no sandbox is documented (F). The registration and Quickstart pages were not in the reviewed documentation (?).",
-    "implication": "None of the assumptions can be checked before Horus provides a test license: VAT acceptance, credit notes, partial matching, currency and volumes. Test invoices and companies cannot be deleted through the API.",
-    "handling": "Proposal: Gate 0 before build: register the integration, obtain a test license and folder, and run a volume test. Descoping trigger: no build without a test license.",
+    "what": "Requests run against the licence's real database; write tests need a test licence or test folder, and no sandbox is documented (F). The registration and Quickstart pages were not available (?).",
+    "implication": "No assumption can be checked until Horus provides a test licence: VAT acceptance, credit notes, partial matching, currency and volumes. Test invoices and companies cannot be deleted through the API.",
+    "handling": "Proposal: in the validation phase, register the integration, obtain a test licence and folder, and run a volume test. Descoping trigger: no build without a test licence.",
     "decision_owner": "Horus provides access (H17, H19); Chift makes the go decision.",
     "basis": "F",
     "routes": "All routes (verification); all write routes"
@@ -2618,133 +2557,108 @@
   "feasibility_evidence": {
    "confirmed": [
     {
-     "text": "Every object in scope has a documented Horus endpoint for the operation the case needs: companies.new/info/list (clients); invoices.sales.new and invoices.purchases.new, optionally with the PDF (invoice creation); book-entries.list and account-histories.list (invoice retrieval); daybooks.list (journals); accounts.new and accounts.list (ledger accounts, chart of accounts); folders.list (folders); book-entries.miscellaneous-operations.new (miscellaneous operations); cost-schemas.list and cost-sections.list (analytics); customers.outstanding, suppliers.outstanding and invoices.sales.outstanding.list (outstanding items).",
+     "text": "Each of the 11 routes has a documented Horus endpoint for its core object and operation (create or list) in the documentation reviewed; no route lacks a capability.",
      "basis": "F",
      "routes": "All 11 routes"
     },
     {
-     "text": "What is established is feasibility at capability level. No route lacks a Horus capability in the documentation reviewed, so the reference's headline holds only with the qualifier 'blocked by a missing capability in the documentation reviewed'. Applying the verdict definitions strictly gives 1 Supported route (folders) and 10 Supported with workaround. On current evidence, the open questions can degrade behaviour or narrow scope (Luxembourg VAT codes, direct posting, large folders) but do not remove a route.",
-     "basis": "D",
-     "routes": "All 11 routes"
-    },
-    {
-     "text": "The write-side rules are documented, so the connector can check them before posting. Invoice total = base + tax, and the lines add up to the header. Cost lines add up to the line base amount. Miscellaneous operations must balance. Type 0/1 marks invoice or credit note. Confirmed is false by default, Number may be 0 only while unconfirmed, and AutoGenerateNumber works only on confirmed operations.",
+     "text": "Invoice creation is native: invoices.sales.new and invoices.purchases.new post invoices and credit notes (Type 0/1) with VAT, analytics and the PDF in one call.",
      "basis": "F",
-     "routes": "Invoice creation, miscellaneous operation creation"
+     "routes": "Invoice creation"
     },
     {
-     "text": "The accepted VAT combinations are published in two spreadsheets linked from the invoice reference pages, downloaded 13 Oct 2026: sales 18 BE and 58 LU rows, purchases 109 BE and 146 LU rows. folders.list returns each folder's legislation (BE/LU), so a per-folder catalogue can be built.",
+     "text": "Client open items are native: invoices.sales.outstanding.list returns open sales invoices and credit notes with open amount and payment status.",
+     "basis": "F",
+     "routes": "Outstanding items (clients), invoice retrieval"
+    },
+    {
+     "text": "Horus publishes the accepted VAT combinations in two spreadsheets (sales, purchases), each with BE and LU sheets, and folders.list returns each folder's legislation.",
      "basis": "F",
      "routes": "Invoice creation, invoice retrieval, VAT codes"
     },
     {
-     "text": "Client open items are native. invoices.sales.outstanding.list returns a folder's open sales invoices and credit notes with OpenAmount, PaymentStatus and TransactionType, and can be filtered by company.",
+     "text": "The write rules are documented, so the connector can check them before posting: totals equal base plus tax, cost lines sum to the line base, miscellaneous operations balance.",
      "basis": "F",
-     "routes": "Outstanding items (clients), invoice retrieval (payment status)"
-    },
-    {
-     "text": "The connection mechanics are documented: an OAuth authorisation code flow with one license per grant, an api_url per license, one-hour access tokens and single-use refresh tokens. ModifiedAfter exists on companies.list, book-entries.list and account-histories.list, and updated invoices and operations get a new Id.",
-     "basis": "F",
-     "routes": "All routes"
+     "routes": "Invoice creation, miscellaneous operation creation"
     }
    ],
    "assumption": [
     {
-     "text": "Emulated paging, totals and day-level filters are correct only if Horus lists return complete result sets for a folder and period. This is deduced from the absence of paging parameters and is unverified on large folders.",
+     "text": "Horus lists return complete results for a folder and period, so paging, totals and day-level filters can be emulated. Deduced from the absence of paging parameters.",
      "basis": "D",
      "routes": "All list routes"
     },
     {
-     "text": "Invoice/credit-note classification on read is a proposed rule, not documented behaviour: the daybook type decides, and the partner-line sign is used only in folders without a credit-note daybook.",
+     "text": "The VAT spreadsheets are current and complete, and the API accepts the Luxembourg tax origins that the API reference enums omit.",
+     "basis": "A",
+     "routes": "Invoice creation, invoice retrieval, VAT codes"
+    },
+    {
+     "text": "Invoice or credit note on read follows the daybook type; the amount sign decides only where no credit-note daybook exists. A proposed rule, not documented behaviour.",
      "basis": "A",
      "routes": "Invoice retrieval, outstanding items"
     },
     {
-     "text": "Ledger amounts on read are in the folder currency (EUR). Open sales items returning TotalAmount next to TotalCurrencyAmount suggest this, but no source states it.",
-     "basis": "A",
-     "routes": "Invoice retrieval, outstanding items, invoice creation (response)"
-    },
-    {
-     "text": "Supplier outstanding items: suppliers.outstanding without CompanyIds returns every supplier, and partially matched lines are either returned or covered by a fallback read of the supplier accounts.",
+     "text": "suppliers.outstanding without a company filter returns every supplier's open lines, partially matched ones included; otherwise a fallback read of supplier ledger lines is needed.",
      "basis": "A",
      "routes": "Outstanding items"
     },
     {
-     "text": "The spreadsheets are current and complete, and the API accepts the Luxembourg TaxOrigin codes that the reference enums omit.",
+     "text": "Ledger amounts on read are in the folder currency (EUR). Open sales items, which carry a total and a separate invoice-currency total, suggest it; no source states it.",
      "basis": "A",
-     "routes": "Invoice creation, invoice retrieval, VAT codes"
-    },
-    {
-     "text": "Analytic combinations are derived as the product of independent per-plan percentages, with largest-remainder rounding.",
-     "basis": "A",
-     "routes": "Invoice creation, invoice retrieval"
-    },
-    {
-     "text": "Field meanings used in the mapping are assumed. active = NOT CustomerActivitySuspended. The invoice header Comment carries reference and customer_memo and comes back on read in the partner-line comment or a remark field (D3).",
-     "basis": "A",
-     "routes": "Client creation, invoice creation, invoice retrieval"
+     "routes": "Invoice retrieval, outstanding items, folders"
     }
    ],
    "confirmation": [
     {
-     "text": "Horus, VAT: the spreadsheets are current and complete, which origin list is authoritative, the combination for folders that are not VAT liable, and how an invalid combination is rejected (H1).",
+     "text": "Horus, VAT and posting: whether the tax files are current and authoritative (H1), credit-note daybook rules and the document type on read (H2), numbering and duplicate numbers (H3).",
      "basis": "?",
      "routes": "Invoice creation, invoice retrieval, VAT codes"
     },
     {
-     "text": "Horus, posting: whether a credit note may sit in a sales or purchase daybook and whether the type can be read (H2); duplicate-number behaviour, commits after a timeout and numbering of confirmed invoices (H3); whether every licence and user may confirm entries (H21).",
-     "basis": "?",
-     "routes": "Invoice creation, invoice retrieval, miscellaneous operation creation"
-    },
-    {
-     "text": "Horus, reads: the currency of ledger amounts and the direction of CurrencyRate (H4); rate, size and time limits (H5); completeness and partial matching of the outstanding endpoints (H8).",
+     "text": "Horus, reads: the currency of ledger amounts (H4), rate, size and time limits (H5), and whether the outstanding endpoints return partially matched lines for all partners (H8).",
      "basis": "?",
      "routes": "Invoice retrieval, outstanding items, all list routes"
     },
     {
-     "text": "Horus, onboarding: which documentation is authoritative (the case links the former apiary documentation), integration registration, the authorising user, and a test license or folder (H17 and new questions).",
+     "text": "Horus, access: integration registration and a test licence or folder (H19, H17), whether every user may confirm entries (H21), and which documentation version is authoritative (H20).",
      "basis": "?",
      "routes": "All routes"
     },
     {
-     "text": "Chift, architecture: the posting mode and the rule for invoices without a number (C1, C7), caching between page calls and request timeouts (C14), and who converts foreign-currency operations (C15).",
+     "text": "Chift, before build: posting mode and the rule for invoices without a number (C1, C7), caching and timeouts (C14), and who converts foreign-currency operations (C15).",
      "basis": "?",
      "routes": "Invoice creation, miscellaneous operation creation, all list routes"
     },
     {
-     "text": "Chift, Task B conventions: input and output signs (C5), acceptance of a synthetic VAT catalogue and the VAT-amount policy (C2), and partner-code generation and the meaning of partner_info (C8). Also needed: confirmation that the contract used (OpenAPI bundled in the chift 0.6.16 SDK) matches docs.chift.eu.",
+     "text": "Chift, Task B conventions: the synthetic VAT-code list (C2), sign conventions (C5) and partner codes (C8); plus a check that the SDK-bundled contract matches docs.chift.eu.",
      "basis": "?",
      "routes": "Client creation, invoice creation, outstanding items"
     }
    ],
    "not_concluded": [
     {
-     "text": "Whether the routes perform and stay correct on large accounting-firm folders. No limits are documented and no volume test has been run, so the reference's claim that the connector 'can absorb' the workarounds is not established.",
+     "text": "Whether the list routes perform and stay complete on large accounting-firm folders: no limits are documented and no volume test has been run.",
      "basis": "?",
-     "routes": "All list routes, especially invoice retrieval and outstanding items"
+     "routes": "All list routes, mainly invoice retrieval and outstanding items"
     },
     {
-     "text": "Whether supplier outstanding items are complete for partially paid invoices. This depends on H8, or on the fallback being validated on test data.",
+     "text": "Whether supplier open items are complete for partly paid invoices. This depends on H8, or on a fallback validated with test data.",
      "basis": "?",
      "routes": "Outstanding items"
     },
     {
-     "text": "Whether Chift's 'posted' can be delivered on every connection. Confirmation rights are undocumented (H21); if confirmation is restricted, entries come back as drafts.",
-     "basis": "?",
-     "routes": "Invoice creation, miscellaneous operation creation"
-    },
-    {
-     "text": "Whether every VAT case clients need can be expressed. The files have no variant for folders that are not VAT liable, Luxembourg uses origins outside the reference enums, and the format of the PCT value is ambiguous.",
+     "text": "Whether every VAT case can be expressed: the files have no variant for non-VAT-liable folders, Luxembourg uses origins outside the reference enums, and the PCT value format is ambiguous.",
      "basis": "?",
      "routes": "Invoice creation (Luxembourg and non-VAT-liable folders)"
     },
     {
-     "text": "Whether incremental synchronisation is complete. It is undocumented whether matching changes or accountant edits update ModifiedAfter, and whether an edit in Horus Office creates a new Id; no deletion signal is documented (H10).",
+     "text": "Whether incremental sync catches every change: ModifiedAfter exists on three lists only, its coverage of matching and accountant edits is undocumented, and no deletion signal exists (H10).",
      "basis": "?",
      "routes": "Invoice retrieval, outstanding items"
     },
     {
-     "text": "Whether the mapping holds for the API version the case links (apiary) and for the live Chift contract. The analysis used docs.horus-software.be and the SDK-bundled Chift spec, and sent no request to a Horus license or a Chift environment.",
+     "text": "Whether the mapping holds for the apiary documentation the case links and for the live Chift reference: neither was compared, and no live request was sent.",
      "basis": "?",
      "routes": "All routes"
     }
@@ -2754,156 +2668,116 @@
  "corr": {
   "corrections": [
    {
-    "topic": "Feasibility headline and confidence",
-    "reference_said": "Section 1 (Executive summary): \"All eleven Chift routes in scope can be built on the Horus Software API, and none is blocked. Two map almost directly (folders and analytic plans). Nine need workarounds that the connector can absorb, at the cost of extra calls, emulated behaviour, or data loss...\". Tiles: \"2 Supported / 9 Supported with workaround / 0 Not supported / 0 To confirm\". Section 6 building block: \"Horus lists return everything.\"",
-    "now": "Lede: \"No route is blocked by a missing Horus capability in the documentation reviewed.\" The split is computed from the data: 1 Supported (folders), 10 Supported with workaround, 0 Not supported. The \"To confirm\" tile is replaced by \"4 routes waiting on a priority-1 answer\": invoice creation (H1, H3, C1, C7), invoice retrieval (H2, H4, H5), outstanding items (H8, H5) and miscellaneous operations (C1, C15). Complexity spread: Low for folders, analytic plans, journals and analytic accounts; Medium for client creation, ledger account creation, chart of accounts and misc operations; High for invoice creation, invoice retrieval and outstanding items. Volume wording becomes: \"expected to work for typical folder sizes; behaviour on large folders is unverified (H5)\". \"Lists return everything\" is labelled D (a deduction from the absence of paging parameters).",
-    "why": "The reference's own H1 said \"Invoice creation cannot post valid VAT without them\", which contradicts an unqualified \"none is blocked\". Horus documents no size or rate limits: the reference's own large-folder row in section 7 is \"To confirm\", so \"can absorb\" had no evidence behind it. No Horus list schema in appendix_horus_api_reference.md has paging parameters, so \"returns everything\" is inferred, not stated. The corrected build tiles read 1 / 10 / 0 / 4.",
+    "topic": "Feasibility headline",
+    "reference_said": "Section 1: \"All eleven Chift routes in scope can be built on the Horus Software API, and none is blocked... Nine need workarounds that the connector can absorb\". Tiles: 2 Supported, 9 Supported with workaround, 0 Not supported, 0 To confirm.",
+    "now": "Section 1: the documentation rules out none of the 11 routes, but only 3 are confirmed. Four rest on assumptions, and four (invoice retrieval, invoice creation, miscellaneous operations, outstanding items) need answers from Horus or Chift. Large-folder behaviour cannot be concluded for any list route.",
+    "why": "\"Can absorb\" had no evidence: Horus documents no limits, and the reference's own large-folder row (section 7) is \"To confirm\". Its H1 also said invoice creation \"cannot post valid VAT without\" the tax files, which conflicts with an unqualified \"none is blocked\".",
     "kind": "Correction",
     "impact": "High"
    },
    {
-    "topic": "Verdict scale applied strictly; analytic plans downgraded; new rating columns",
-    "reference_said": "Section 2 \"How to read\": \"Supported One native Horus endpoint, plus cached reference data, serves the route with deterministic transformations. Losses are limited to minor optional fields.\" and \"To confirm The documentation is insufficient to decide.\" Section 4 overview: \"Analytic plans retrieval ... POST /cost-schemas.list | List | Supported\"; folders: \"GET /folders.info (country, optional) | List | Supported\".",
-    "now": "The definitions are applied with no exceptions (D11). Supported: native endpoint(s), deterministic mapping and cached lookups only, with no extra live calls per request, no emulated filtering, paging or numbering, and no lost capability. Supported with workaround: feasible, but needs extra live calls, emulation, or loses a capability. To confirm: feasibility itself depends on an unanswered question. Analytic plans becomes Supported with workaround (Low complexity; impact \"Minor: free dimensions hidden\"). Folders stays Supported only because folders.info (country) is no longer called by default (C4). New columns on the section 4 overview: build complexity, client impact and depends on (priority-1 questions), explained in a rating note. Complexity and impact are the analyst's assessment, to calibrate with Chift.",
-    "why": "Chift Get analytic plans is paginated (appendix_chift_spec_extract.md › GET analytic-plans: \"param[query] page: integer default=1\", response \"ChiftPage_AnalyticPlanItem_\"), while cost-schemas.list has no paging, so page, size and total are emulated (D). Free-type schemas (\"`900`: Free\" in cost-schemas.list) are hidden by design pending C9 (A). Get folders returns \"array[FolderItem]\" (unpaginated), so it needs no emulation (F). The reference's own workaround definition (\"emulated filters, pagination or numbering\") already covered analytic plans.",
+    "topic": "Rating scale replaced; analytic plans",
+    "reference_said": "Section 2 verdicts: Supported = \"One native Horus endpoint, plus cached reference data, serves the route with deterministic transformations\"; Supported with workaround = \"Feasible, but needs ... emulated filters, pagination or numbering\". Section 4: analytic plans is \"a 1:1 read of the cached schema list (supported, D11)\".",
+    "now": "Routes are rated by evidence, not effort: Confirmed, Feasible with assumptions, Needs confirmation or Not yet concluded, by their weakest material point. Analytic plans is Confirmed; emulated paging over at most 8 schemas and hidden Free schemas (C9) are treated as documented minor adaptations. Folders is Feasible with assumptions.",
+    "why": "On the reference's own definition, analytic plans was \"Supported with workaround\": Chift's analytic-plans route is paginated while cost-schemas.list is not, and Free-type schemas are hidden pending C9. Folders relies on assumed values (main_currency EUR, active, company_number).",
     "kind": "Correction",
-    "impact": "High"
+    "impact": "Medium"
    },
    {
-    "topic": "Tax-combination spreadsheets: available and analysed (not missing)",
-    "reference_said": "Section 2 Sources: \"Not available | Quickstart, integration registration, support/FAQ and changelog pages; the accepted tax-combination spreadsheets; the Postman collection; webhook documentation | Points that depend on them are marked “To confirm”.\" H1: \"Can you share the accepted tax-combination files for sales and purchases?\" Task B lines[].tax_code: \"built from the Horus accepted-combination files (not provided; requested from Horus)\".",
-    "now": "Both spreadsheets are linked from the Horus reference. They were downloaded on 13 Oct 2026 and analysed in a new appendix C. Sales: BE 18 rows, LU 58. Purchases: BE 109 rows, LU 146. Each file also has an \"Available values\" sheet. The VAT-code catalogue is built from these files. H1 (tier 1) changes from \"send us the files\" to: confirm they are current and complete, say how changes are announced, and say how an invalid combination is rejected (status and ErrorType). Gate 0 includes this confirmation. Every \"not provided / requested from Horus\" statement goes. The sentence \"Points that depend on them are marked To confirm\" is dropped, because no row carried that label.",
-    "why": "appendix_horus_api_reference.md › invoices.sales.new/update: \"The accepted tax combinations (Tax rate / origin and type) are available [here](…Tax-combinations-sales.xlsx)\"; invoices.purchases.new/update: \"The accepted tax combinations (Tax type / kind / rate / origin / condition / condition value)) are available [here](…Tax-combinations-purchases.xlsx)\". The row counts are the sheet headers in appendix_horus_tax_combinations.md. Asking Horus for files its own reference links would signal an incomplete source review.",
+    "topic": "Tax-combination spreadsheets available and analysed",
+    "reference_said": "Section 2 Sources lists \"the accepted tax-combination spreadsheets\" as \"Not available\". Section 8, H1: \"Can you share the accepted tax-combination files for sales and purchases?\"",
+    "now": "Sections 1 and 4: both spreadsheets, linked from the Horus invoice pages, were analysed (sales 18 BE and 58 LU combinations; purchases 109 BE and 146 LU). Discrepancies with the API reference are flagged (Luxembourg origins outside the enums, ambiguous PCT format), and H1 asks Horus to confirm the files.",
+    "why": "The invoices.sales.new and invoices.purchases.new pages state \"The accepted tax combinations ... are available here\". Asking Horus for files its own reference links would signal an incomplete review. Some sales origin labels also differ from the reference (origin 16).",
     "kind": "New information",
     "impact": "High"
    },
    {
-    "topic": "VAT catalogue per folder legislation and direction; documentation discrepancies",
-    "reference_said": "Appendix B D2: \"S-{rate}-{origin}-{type} for sales (plus -{country} for OSS lines, origin 13), P-{rate}-{origin}-{type}-{kind}-{condition}-{condition value} for purchases\". One catalogue serves every folder. Task B evidence for tax_code cites \"TaxOrigin *: number enum[0..20]\".",
-    "now": "There is one list per folder legislation (BE or LU, from folders.list/info) and per direction (sales list for customer_*, purchase list for supplier_*). GET vat-codes becomes folder-scoped. A tax_code is valid only if it is in that list (otherwise 422). Validation uses the files, never the reference TaxOrigin enums, and labels come from the files. The country component applies to every OSS row: BE origin 13, and LU origins 24, 26 and 29, whose rate and country are \"XX\" (supplied per transaction). Discrepancies flagged to Horus in H1(b)(c): (a) the sales TaxOrigin enum stops at 20, but LU sales use origins up to 35; the purchase enum stops at 39, but LU purchases use 40–56. (b) Some codes have different labels: sales 16 is \"Ventes Art 44\" in the reference and \"Ventes d'immobilisés\" in the file; purchases 12 is \"Hors CEE sans facture\" in the reference and \"Achat TVA Marge\" in the file. (c) TaxCountryCode is described as \"Only used for OSS Vat lines (TaxOrigin = 13)\". (d) PCT is 35/50/75/85 in the combinations but 0.35… in \"Available values\". (e) Typo \"Nationam\". Folders that are not VAT liable have no variant in the files; this becomes an H1 sub-question.",
-    "why": "appendix_horus_api_reference.md › invoices.sales.new: \"TaxOrigin *: number enum[0, …, 20]\" and \"TaxCountryCode … // Only used for OSS Vat lines (TaxOrigin = 13)\"; invoices.purchases.new: \"enum[0, …, 39]\" and \"`12`: Hors CEE sans facture\". appendix_horus_tax_combinations.md: \"LU | 1 | European | XX | 26 | XX | (OSS) UE - Ventes Marchandises - distance\", \"BE | 0 | Nationam | 0 | MERCH | 0 | … | 12 | Achat TVA Marge\", and Available values \"35 | 0.35\". As written, the reference mapping would reject or mislabel valid Luxembourg lines.",
-    "kind": "New information",
-    "impact": "High"
-   },
-   {
-    "topic": "Foreign-currency miscellaneous operations: converted, not rejected",
-    "reference_said": "Section 7: \"Miscellaneous operations: the request has no currency field, so non-EUR operations are rejected (derived; proposed default, see C3).\" Section 1 data-loss list: \"miscellaneous operations are EUR-only\". C3 lists \"non-EUR operations\" under \"reject or ignore with a warning?\". Misc-op card: \"non-EUR operations (no currency field) ... cannot be posted\".",
-    "now": "Proposal: a non-EUR operation is converted at the supplied rate. It is never rejected and never posted unconverted. currency_exchange_rate is required when currency ≠ EUR, and 1 counts as missing because it is the Chift default. Who converts is a new tier-1 Chift question (C15). The preferred reading is that Chift core converts before calling the connector. The fallback is that the connector converts line by line, rounds to 2 decimals, and returns 422 if rounding unbalances the entry, unless Chift defines a residue rule. The balance check uses the same normalised amounts that are sent. Amounts are stored in EUR and the original currency is not kept (it may be noted in the line comment). The response never pairs EUR amounts with a foreign code (D4). \"Non-EUR operations\" is removed from C3.",
-    "why": "Chift contract (appendix_chift_spec_extract.md › JournalItem.other_currencies_allowed): \"If it doesn't allow other currencies an exchange rate must be provided for Chift to convert the amounts to the journal currency\". Misc-op currency_exchange_rate: \"Must be filled in when creating the operation in another currency from the folder's default currency.\" The Horus misc-op body has only \"Debit *: number // Non-negative amount\" / \"Credit *\" and no currency field (F), so amounts are stored in the folder currency (EUR assumed, H4). Rejecting contradicts Chift's own text, and \"ignore with a warning\" would book foreign amounts as EUR.",
+    "topic": "Foreign-currency miscellaneous operations",
+    "reference_said": "Section 7: \"Miscellaneous operations: the request has no currency field, so non-EUR operations are rejected (derived; proposed default, see C3).\" Section 1: \"miscellaneous operations are EUR-only\".",
+    "now": "Sections 3 and 5 (limitation 7), Proposal: foreign-currency operations are converted to EUR at the supplied rate, not rejected; the original currency is not kept. Who converts (Chift core or the connector), the rate direction and rounding are a before-build Chift question (C15).",
+    "why": "Chift's contract says the exchange rate \"Must be filled in when creating the operation in another currency from the folder's default currency\". Rejecting such operations contradicts that contract; Horus lacking a currency field calls for conversion, not refusal.",
     "kind": "Correction",
     "impact": "High"
    },
    {
-    "topic": "Posting status default (Chift 'posted' vs Horus Confirmed)",
-    "reference_said": "Section 3 concept map: \"Posted / draft | Confirmed true / false | API entries are unconfirmed by default so the accountant can review them before confirming. | Documented\". Appendix B D12: \"“draft” → unconfirmed; “posted” → confirmed, with a per-consumer option to always push unconfirmed.\"",
-    "now": "Proposal (decision owner Chift, C1, tier 1): a posting mode chosen per connection at activation. Review mode is the proposed default: every entry is pushed with Confirmed = false for the accountant to confirm. Direct mode sends \"posted\" as Confirmed = true and \"draft\" as false. The response always reports the status actually stored, so a \"posted\" request in review mode comes back as \"draft\". The posted = Confirmed pairing is labelled D/A, not Documented. On Horus, Chift \"draft\" means booked, visible in default list reads, not yet confirmed by the accountant, and still deletable through the API for misc operations. Whether every licence or user may set Confirmed = true is undocumented (new H21, tier 1). Consequences: review mode gives no AutoGenerateNumber; direct mode makes confirmed misc operations undeletable, needs a non-zero number on confirmed sales invoices, and may return a 403.",
-    "why": "Horus guide › Data model: \"Entries pushed through the API are unconfirmed by default ( Confirmed: false ), which lets the accountant review them in Horus Office before confirming them. Some operations, such as deleting a miscellaneous operation, are only possible on unconfirmed entries.\" Guide › Reading accounting data: \"By default, lists include unconfirmed entries\". Chift: status default=\"posted\" (\"posted (finalized) in the accounting system\"). No source equates the two. The 72 endpoints have no invoice delete (only book-entries.miscellaneous-operations.delete). Under the reference default, every request sent with Chift's default status would skip the accountant's review.",
+    "topic": "Posting status default",
+    "reference_said": "Section 3 concept map: \"Posted / draft | Confirmed true / false | ... | Documented\". Appendix B, D12: \"'draft' → unconfirmed; 'posted' → confirmed, with a per-consumer option to always push unconfirmed.\"",
+    "now": "Sections 2 and 5, Proposal: a posting mode per connection, review by default (entries pushed unconfirmed for the accountant) or direct; the response reports the status actually stored. The pairing is a proposal, not documented. Whether every user may confirm entries is a before-build question (H21).",
+    "why": "No source equates Chift 'posted' with Horus Confirmed. Horus pushes API entries unconfirmed so the accountant can review them, and invoices cannot be deleted through the API. The reference default would skip that review on every request sent with Chift's default status.",
     "kind": "Correction",
     "impact": "High"
    },
    {
-    "topic": "Recommendation: conditional go with a gate and phases",
-    "reference_said": "Section 1: \"Recommendation Proceed with a Horus connector covering all eleven routes, built on a small set of shared components... Before building, settle the open questions with Horus that change the design, mainly the tax-combination files, credit-note daybooks, document numbering, the currency of ledger amounts and rate limits, and get a test license\". Section 9: \"None of these needs changes on the Horus side, but a handful of answers from Horus would remove the main assumptions.\"",
-    "now": "\"Go, conditional on a short gate\" (a proposal, not a commitment by Chift or Horus). Gate 0: integration registration (H19), a test licence and test folder (H17), Horus confirmation that the tax files are current (H1), volumes, rate limits and timeouts (H5), and Chift decisions on posting mode (C1) and numbering (C7). Phase 1: reference reads plus client and ledger-account creation, with a volume test on the largest test folder. Phase 2: invoice creation and misc operations (VAT catalogue, numbering, duplicate and timeout scenarios). Phase 3: the ledger-rebuilt reads (invoice retrieval, outstanding items) once H2, H4, H5 and H8 are answered. Descoping triggers: a reduced VAT list, a mandatory date window or journal filter on invoice retrieval, and no build without a test licence. Questions now carry tiers (1 before build, 2 route design, 3 verifiable in a test folder). New ids: H19–H25 and C14–C20; existing ids are unchanged.",
-    "why": "Horus has no sandbox (reference section 3: \"Requests run against the license’s real database... no sandbox is documented\"). Limits are undocumented (H5). Posting and numbering are client-visible decisions owned by Chift (C1, C7). An ungated \"proceed\" over-commits on all three. Review issues S1-03 and S1-09, lead decision LD4.",
+    "topic": "Invoice or credit note on read",
+    "reference_said": "Appendix B, D1: \"On read, always scan both daybook types and classify each entry as invoice or credit note from the sign of the customer/supplier line; for open sales items, the documented TransactionType takes precedence.\"",
+    "now": "Section 5, limitation 4 (Proposal; an Assumption pending H2): the daybook type decides; the amount sign only where no credit-note daybook exists; the open-items type is a check, not an override. Stated failure: a credit note keyed into a sales daybook, where a credit-note daybook exists, reads as an invoice.",
+    "why": "Chift allows negative amounts on customer invoices (\"A negative amount represents credit on customer invoices\"), so sign-first would file them as refunds. TransactionType exists only on open sales items, so the override would reclassify a document once paid.",
     "kind": "Correction",
-    "impact": "High"
-   },
-   {
-    "topic": "Duplicate protection is best effort",
-    "reference_said": "Section 6 building block: \"Duplicate protection | Search before create (VAT number, external reference, document number) and check before retrying after a timeout or server error, because Horus has no idempotency key.\" Section 7: \"Never retry blindly. Search for the record first (external reference, VAT number, document number) and re-post only if it does not exist. | All write routes | Derived\".",
-    "now": "Renamed \"Best-effort duplicate protection\". Search-then-retry works only when the record has a key. Some records have none: an invoice or operation sent without a number, an operation numbered by Horus, or a client without a VAT number or external reference. These are never retried automatically, and the connector returns an explicit \"outcome unknown\" error (C6). Supplier invoices without a number get a heuristic check on supplier, date and total (configurable, C6). Identical in-flight calls are serialised by a connector-side lock (proposal). Consumers are advised to always send invoice_number, operation_number and external_reference. H3(b) asks whether a timed-out create can still commit and whether a new entry is listed immediately.",
-    "why": "Horus guide › Responses & errors gives only \"500 : retry later with exponential backoff\". No idempotency key appears among the 72 endpoints, and the docs say nothing about commit-after-timeout or read-after-write. Sales Number \"can be 0 if not confirmed\" and purchase Number is \"Nullable\", so unnumbered entries leave nothing to search on. Chift contract: invoice_number \"is recommended to use this number for idempotency to prevent duplicate entries.\" Invoices cannot be deleted through the API, so a duplicate falls to the accountant to fix.",
-    "kind": "Qualification",
     "impact": "High"
    },
    {
     "topic": "Supplier open amounts and partial matching",
-    "reference_said": "Section 4 card and section 5 Task B summary: \"Supplier items come from supplier ledger lines, with the open amount computed from matching groups.\" Section 7: \"Partial payments and instalments. | Open amounts come from matching groups.\" H8 asks only about scope without CompanyIds, carried-over lines and a purchase-side open list. Section 9: \"supplier outstanding items computed from matching\".",
-    "now": "Supplier open_amount = Credit − Debit of each unmatched line, so the line is open for its full amount (D). Netting per (company, MatchNo) group, with the remainder allocated oldest due date first, applies only if Horus also returns partially matched lines (A; the allocation rule is a proposal to Chift). H8 is now tier 1 and blocks this route. It adds: are partial lines returned, and with their whole group? Are Debit and Credit the original amounts or the open remainder? Does NotMatchedOnly drop partial lines? Can an item appear twice (prior-year line plus carry-forward line)? Can one entry have several partner lines? Folder-wide scope without CompanyIds is labelled an assumption. New items: a control check against SumDebit/SumCredit (H23), the documented fallback through account-histories.list, and a guard on the client path so that a ledger line whose book entry is already a kept open-sales row is never emitted again (no double count).",
-    "why": "Horus guide › Outstanding items & matching: \"Lines that are not matched yet make up the outstanding items\" (F). suppliers.outstanding has \"MatchStatus: number enum[0, 900] // - `0`: Partially - `900`: Totally\", so partial lines are plausible but not confirmed. Open sales invoices carry \"PaymentStatus ... `10`: Partially paid\" natively, but suppliers have no such list. If partial lines are not returned, partially paid supplier invoices disappear without notice.",
+    "reference_said": "Section 4: \"Supplier items come from supplier ledger lines, with the open amount computed from matching groups.\" Section 7: \"Partial payments and instalments. | Open amounts come from matching groups.\"",
+    "now": "Section 5, limitation 5: an unmatched supplier line is open for its full amount; partly matched groups are netted only if Horus returns them, otherwise a fallback read is needed. H8 is a before-build question, and completeness for partly paid invoices is not yet concluded.",
+    "why": "Horus states that lines \"not matched yet make up the outstanding items\". MatchStatus has a \"Partially\" value, but nothing says partially matched lines are returned. If they are not, partly paid supplier invoices disappear without notice.",
     "kind": "Qualification",
     "impact": "High"
    },
    {
-    "topic": "Invoice vs credit-note classification on read",
-    "reference_said": "Appendix B D1: \"On read, always scan both daybook types and classify each entry as invoice or credit note from the sign of the customer/supplier line; for open sales items, the documented TransactionType takes precedence.\" Section 7 row \"A credit note stored in a sales or purchase daybook\" is labelled Assumption.",
-    "now": "Proposed rule, daybook first: an entry in a 250/150 daybook is a credit note and an entry in a 200/100 daybook is an invoice. The partner-line sign is used only in folders without a credit-note daybook, where the write fallback posts refunds into 200/100, so the connector's own documents still round-trip. TransactionType on open sales items is a consistency check (mismatches are logged), never an override, so a document keeps its class once paid. Known failure, now stated: an accountant's credit note keyed into 200/100 in a folder that has 250/150 comes back as an invoice with negative amounts. Label A, pending H2 (Horus) and C5/C10 (Chift). Verdict text: \"invoice/refund split conditional on H2\".",
-    "why": "Chift contract (InvoiceItemDueDatesOut.amount): \"A negative amount represents credit on customer invoices and supplier refunds or debit on supplier invoices and customer refunds\". Credit-direction invoices are therefore legitimate, and sign-first would file every one of them as a refund. TransactionType exists only on invoices.sales.outstanding.list (open items), so the reference override moved a document from customer_invoice to customer_refund once it was paid. Book entries expose no invoice type on read (H2).",
-    "kind": "Correction",
-    "impact": "High"
-   },
-   {
-    "topic": "Documentation version and evidence base disclosure",
-    "reference_said": "Section 2 Sources: \"Horus API reference | 72 endpoint pages, each with its OpenAPI definition (documentation dated 24 September 2026)\". The host is never named (\"apiary\" appears 0 times in the report), and nothing says that no live calls were made.",
-    "now": "Sources state that the case links the former Horus documentation (horussoftwareapi.docs.apiary.io), while the analysis used the current documentation at docs.horus-software.be: API reference dated 24 Sep 2026, guides printed 13 Oct 2026, tax spreadsheets downloaded 13 Oct 2026. The two versions were not compared. New H20 (tier 1) asks which is authoritative and whether apiary is deprecated or covers another API version. Chift contract: the OpenAPI bundled in chift SDK 0.6.16; docs.chift.eu could not be reached and is to be spot-checked. Method: desk analysis, with no request sent to a Horus licence or a Chift environment.",
-    "why": "case.md: \"see documentation here: https://horussoftwareapi.docs.apiary.io/#introduction/general-principles\". If names or fields differ between versions, the mapping would look wrong in the meeting. No allowed source shows whether they differ, so this is a disclosure, not a claim that the mapping is wrong.",
-    "kind": "New information",
+    "topic": "Duplicate protection is best effort",
+    "reference_said": "Section 6 building block: \"Duplicate protection | Search before create (VAT number, external reference, document number) and check before retrying after a timeout or server error, because Horus has no idempotency key.\"",
+    "now": "Section 5, limitation 6: the check is best effort. It works only when the record has a key; when it has none (no number, or a client without VAT number or external reference), the connector returns an 'outcome unknown' error instead of retrying. Consumers should always send a number.",
+    "why": "Horus documents no idempotency key and nothing on commits after a timeout (H3). Unconfirmed entries may carry Number 0, leaving nothing to search on, and a duplicate invoice cannot be deleted through the API.",
+    "kind": "Qualification",
     "impact": "Medium"
    },
    {
-    "topic": "Numbering when invoice_number is missing",
-    "reference_said": "Invoice creation card: \"invoice_number null: a draft gets Number=0. A posted sale gets max(DocumentNo)+1 from the same call (assumption, race risk) or is rejected. A posted purchase gets null (nullable).\" C7: \"Is rejecting non-numeric invoice and operation numbers acceptable?\"",
-    "now": "Proposal (C7, tier 1; H3): an entry pushed unconfirmed without a number carries Number 0, for sales and purchases alike (null is not used, because what Horus stores for it is undocumented). An invoice to be confirmed without invoice_number is pushed for review with Number 0 and returned as \"draft\" with invoice_number null (default). Alternatives: a 422, or max(DocumentNo)+1 as an opt-in after H3, with the race risk stated. Validation: non-numeric values, leading zeros, more than 15 digits and 0 are rejected with 422; the display number goes in reference. An entry without a number has no stable key after an accountant edit, so C7(c) asks whether the connector may require or assign one. operation_number is assumed to be the Horus entry Number (C7(d)).",
-    "why": "invoices.sales.new: \"Number *: number ... (can be 0 if not confirmed)\"; invoices.purchases.new: \"Number: number|null ... Nullable\". AutoGenerateNumber exists only on misc, bank and financial operations (\"Only works if \\\"Confirmed\\\" is set to *true*\"). Chift: invoice_number \"if not specified, will be automatically generated according to the system’s numbering rules. It does not necessarily match the number displayed on an invoice.\" Reconciling on daybook plus number fails for Number 0.",
+    "topic": "ModifiedAfter exists on three lists only",
+    "reference_said": "Section 3 conventions (labelled Documented): \"Many lists offer ModifiedAfter/ModifiedBefore for incremental synchronisation.\"",
+    "now": "Sections 1 and 2: ModifiedAfter exists only on companies.list, book-entries.list and account-histories.list, and no deletion signal is documented. Incremental reads need periodic full re-syncs; whether they catch matching changes and accountant edits is not yet concluded (H10).",
+    "why": "The guides say \"Many lists also offer ModifiedAfter / ModifiedBefore filters\", but in the API reference the filter appears only in those three request schemas. Accounts, daybooks, analytics and open-item lists must be re-read in full.",
+    "kind": "Qualification",
+    "impact": "Medium"
+   },
+   {
+    "topic": "Numbering without invoice_number",
+    "reference_said": "Section 4, invoice creation: \"invoice_number null: a draft gets Number=0. A posted sale gets max(DocumentNo)+1 from the same call (assumption, race risk) or is rejected. A posted purchase gets null (nullable).\"",
+    "now": "Sections 4 and 5, Proposal: an invoice without a number is pushed unconfirmed with Number 0 and returned as a draft; generating the next number is only an opt-in alternative (C7, H3). Non-numeric numbers are rejected, and the printed number goes in reference.",
+    "why": "Horus allows Number 0 only while an invoice is unconfirmed and offers automatic numbering only for confirmed miscellaneous, bank and financial operations. A computed next number risks collisions, and an unnumbered entry has no key for duplicate checks.",
     "kind": "Correction",
     "impact": "Medium"
    },
    {
     "topic": "'No VAT-code entity' qualified",
-    "reference_said": "Section 3 concept map: \"VAT code | No VAT-code entity: rate + origin + type (+ kind and condition for purchases) | ... | Documented\". Section 1: \"Horus has no VAT-code entity\". Task B: \"Horus VatDetail.VatCode is Horus's internal code and is never returned as the Chift tax_code\".",
-    "now": "Horus has no VAT-code list endpoint and accepts no VAT code on write. On read, account-histories.list/.info, customers.outstanding and suppliers.outstanding return VatDetail.VatCode and VatHeading strings whose meaning is undocumented; nothing shows they are \"internal\". D2 stays the v1 design, and VatCode is never returned as tax_code. H1(e) asks whether VatCode is stable and one-to-one with a combination, TaxKind included. If it is, purchase tax_code = null on read could be removed.",
-    "why": "appendix_horus_api_reference.md › account-histories.list: \"VatCode: string|null // \" and \"VatHeading: string|null // \", with no description; the same fields appear on account-histories.info, customers.outstanding and suppliers.outstanding. Labelling an absence claim \"Documented\" when the reference shows a VAT code on read is an easy challenge.",
+    "reference_said": "Section 3 concept map: \"VAT code | No VAT-code entity: rate + origin + type ... | Documented\". Section 5: \"Horus VatDetail.VatCode is Horus's internal code and is never returned as the Chift tax_code\".",
+    "now": "Section 2: Horus has no VAT-code list and accepts no VAT code on write, but ledger reads return VatCode and VatHeading strings whose meaning is undocumented. tax_code is rebuilt from the line VAT fields (Proposal), and H1 asks what these codes represent.",
+    "why": "account-histories.list/.info, customers.outstanding and suppliers.outstanding expose \"VatCode: string|null\" without a description; nothing shows it is internal. If it maps one-to-one to a combination, it could fill purchase tax_codes that now come back empty.",
     "kind": "Qualification",
     "impact": "Medium"
    },
    {
-    "topic": "Chart-of-accounts type and type filters (VAT, cash)",
-    "reference_said": "Chart-of-accounts card, items[].type (first match wins, label Derived): \"(5) AccountSubCategory: '500: ADispo - \\\"Valeurs disponibles\\\"' → bank (bank vs cash is ambiguous)\"; \"(6) AccountCategory: ... '100: Assets', ... '600: Liability' and '1100: Prov' → other\"; \"(7) Fallback for Legislation BE only ...: 411 or 451 → vat, 55 → bank, 57 → cash\". Overview: \"POST /accounts.list, POST /daybooks.list (account type derivation, cached)\".",
-    "now": "Balance-sheet AccountCategory values now give \"no conclusion\", so the cascade reaches the BE prefix step. ADispo is resolved by prefix in BE folders (55 → bank, 57 → cash, otherwise bank). type=vat and type=cash are best effort. When a request asks for them, the connector loads the line-level AccountType map (account-histories.list over the current and previous fiscal year, one call per folder, cached), so accounts with movements are typed by \"400: VAT\" or \"500: Cash\". Unused accounts rely on the BE prefix fallback (A); in LU folders, unused VAT and cash accounts cannot be typed. The overview adds account-histories.list (only for a VAT or cash filter), and the impact reads \"VAT and cash filters best effort\". The row is labelled A. C18 asks how an inexact filter is reported; H12 adds the IntCategory list and \"is AccountCategory always filled?\".",
-    "why": "Because the first match wins, step 6 typed every balance-sheet account, VAT accounts 411/451 included, as \"other\" before step 7 could run, and step 5 sent 57 accounts to bank. type=vat and type=cash therefore returned almost nothing. Chift's filter targets these uses (appendix_chift_spec_extract.md › GET chart-of-accounts: \"Filter based on the type of the account (e.g. bank, cash, income, expense, vat)\"). account-histories.list documents \"AccountType ... 400: VAT - 500: Cash\".",
+    "topic": "Chart-of-accounts type filters",
+    "reference_said": "Section 4, chart of accounts, items[].type (\"the first match wins\"): step 5 \"ADispo ... → bank\"; step 6 \"'100: Assets' ... '600: Liability' ... → other\"; step 7 BE fallback \"411 or 451 → vat, 55 → bank, 57 → cash\".",
+    "now": "Section 3: chart of accounts is Feasible with assumptions. The type rests on a heuristic cascade, and type=vat and type=cash are best effort: ledger-line account types where the account has movements, Belgian prefixes otherwise, nothing for unused accounts in Luxembourg folders (C18).",
+    "why": "With the first match winning, step 6 typed every balance-sheet account, VAT accounts included, as \"other\" before the BE fallback could run (unless the optional ledger-line step ran), and step 5 sent cash accounts to bank. Type=vat and type=cash filters returned almost nothing.",
     "kind": "Correction",
     "impact": "Medium"
    },
    {
-    "topic": "ModifiedAfter availability and incremental sync",
-    "reference_said": "Section 3 conventions: \"Filters | String filters use “contains”; all filters must match. Many lists offer ModifiedAfter/ModifiedBefore for incremental synchronisation. Ledger periods are expressed in months. | Documented\". Section 6 reference cache: \"refreshed when a lookup misses\".",
-    "now": "In the API reference, ModifiedAfter/ModifiedBefore exist on three lists only: companies.list, book-entries.list and account-histories.list. Accounts, daybooks, cost schemas and sections, fiscal years, folders and the open-item lists have no change filter and are re-read in full; deletions are not signalled. As a result, the reference cache gets a short time-to-live on top of refresh-on-miss, and closure dates are read fresh before every write. For invoice retrieval with updated_after: ModifiedAfter, minus a small overlap (proposal), is applied to headers and lines; the look-back is bounded (C11); boundary semantics and whether line and matching changes are tracked go to H10; a periodic full reconciliation runs; consumers dedupe by id.",
-    "why": "The guides say \"Many lists also offer ModifiedAfter / ModifiedBefore filters\" (Making requests) and name \"companies.list , book-entries.list and account-histories.list among others\" (Reading accounting data), but in appendix_horus_api_reference.md the filter appears only in those three request schemas. Refresh-on-miss cannot catch an account made inactive, a renamed daybook or a newly closed period.",
-    "kind": "Qualification",
-    "impact": "Medium"
-   },
-   {
-    "topic": "Client-visible limitations revised (new section 6), including the currency switch on read",
-    "reference_said": "Section 1: \"Data loss Chift should disclose to its clients: one address per third party, no mobile, notes or person fields; no line quantity or unit price on invoices; the account type cannot be written; miscellaneous operations are EUR-only; analytic balances are not stored.\" The read-side currency behaviour appears only in the invoice retrieval card: \"only open foreign-currency sales invoices are returned in their own currency\".",
-    "now": "A new section 6, \"Impact on client applications\", in plain language, adds: invoice ids change when an entry is modified; a pushed invoice cannot be deleted through the integration; entries may wait for accountant review; purchase VAT codes can come back empty on read; every partner comes back as a company; numbers must be numeric. It also adds that a foreign-currency sales invoice comes back in its own currency while open and switches to euro once paid, and purchase invoices always come back in euro. C16 asks Chift to choose between this behaviour, disclosed, and one stable euro view until H4 (the analyst's preference). Reworded: misc operations are converted at the supplied rate (not \"EUR-only\"); analytic balances are not stored per account but can be computed over a period (C4), so they are not lost.",
-    "why": "Invoice-currency amounts exist only on invoices.sales.outstanding.list (\"TotalCurrencyAmount\", \"OpenCurrencyAmount\"), which returns \"open invoices (and/or linked payments) for a given folder\". The currency of ledger amounts is undocumented (D4, H4). A syncing consumer would see the same id change currency and amounts once the invoice is paid. cost-histories.list makes period balances computable.",
+    "topic": "Documentation version and evidence base",
+    "reference_said": "Section 2 Sources: \"Horus API reference | 72 endpoint pages, each with its OpenAPI definition (documentation dated 24 September 2026)\". The host is not named, and the report never states that no live request was made.",
+    "now": "Cover and appendix A: the case links the former apiary documentation; the analysis used docs.horus-software.be and the Chift contract bundled in SDK 0.6.16, without comparing versions or sending live requests. H20 asks Horus which documentation is authoritative.",
+    "why": "The case links horussoftwareapi.docs.apiary.io. If names or fields differ between versions, the mapping could look wrong in the meeting. No allowed source shows whether they differ, so this is a disclosure, not a claim that the mapping is wrong.",
     "kind": "New information",
     "impact": "Medium"
    },
    {
-    "topic": "Selected-folder enforcement on every route",
-    "reference_said": "Appendix B D7: \"folder_id is required when a connection has several selected folders.\" Section 7 error translation: \"403 Forbidden | The folder or resource is not accessible with this connection. | 400 “folder not accessible with this connection”\".",
-    "now": "Every folder-scoped route rejects a folder_id that is not in the stored activation selection with 400 \"folder not selected for this connection\", before any Horus call. This is defence in depth and is dropped if Chift confirms its platform enforces the rule upstream (C12). A Horus 403 maps to 400 \"access denied for the connected Horus user (folder or action)\". Get folders is not affected.",
-    "why": "Chift FolderItem.selected: \"Only selected folders can be used in subsequent requests. Requests targeting a folder that was not selected will be rejected.\" One Horus grant covers every folder the authorising user can see (folders.list Mode \"`0`: All folders - For the accountant: All folders\"), so on an accounting-firm licence isolation otherwise rests on Chift's selection alone. According to review S2-07, the reference enforced the check only in client creation.",
-    "kind": "New information",
-    "impact": "Medium"
-   },
-   {
-    "topic": "Write-route read-back counts and failed read-backs",
-    "reference_said": "Section 1: \"Creation calls return only an id. Client and account creation read the record back (one .info call) to return the full Chift response; invoices are read back by default, and miscellaneous operations only when Horus generates the number.\" Section 5 client intro: \"reads the company back (company details, IBANs and the receivable account)\". Invoice card: \"If the read-back fails, never re-create the invoice: return the Id with echoed values.\"",
-    "now": "Client creation needs two to three read-back calls: companies.info; ibans.list when the company has IBANs; accounts.info for the receivable account when the chart is not cached. A single companies.list call with Include is an assumption (H15). Account creation needs one accounts.info call. Invoices are read back by default; misc operations only when Horus generates the number. Values Horus cannot store (quantity, unit price, exact analytic percentages) are echoed, so a later read can differ. On every write route, a failed read-back never causes a re-create or an error; the response is built from the request values (D13).",
-    "why": "data/create_client.json: companies.info \"1 per Chift call\"; ibans.list \"0-1 per Chift call (skip when companies.info Data.Ibans is empty)\"; accounts.info \"0-1 per Chift call; usually replaced by the per-folder accounts.list cache\". The reference stated the no-re-create rule only for invoices. Returning an error after a successful create invites a retry that creates a second entry, which cannot be deleted through the API.",
+    "topic": "Recommendation: validation phase first",
+    "reference_said": "Section 1: \"Proceed with a Horus connector covering all eleven routes, built on a small set of shared components... Before building, settle the open questions with Horus that change the design ... and get a test license\". Section 9: \"A Horus connector is feasible for the full scope\".",
+    "now": "Section 1: \"Proceed to a short validation phase rather than a full build\": a test licence and before-build answers first, then reference routes and simple creates, then invoice creation and operations; ledger-based reads wait for Horus's answers. A proposal for Chift's decision, not a commitment.",
+    "why": "The reference committed to all eleven routes before any answer or test. Horus has no sandbox, limits are undocumented (H5), posting and numbering are client-visible Chift decisions (C1, C7), and the ledger-based reads carry most open questions.",
     "kind": "Correction",
-    "impact": "Medium"
-   },
-   {
-    "topic": "Endpoint count and overview rows",
-    "reference_said": "Section 1 tile: \"40 of 72 Horus endpoints called, including optional ones\". Section 4 invoice retrieval row: \"GET /book-entries.info (single invoice)\".",
-    "now": "The tile now uses the same rule as appendix A: 35 of 72 endpoints, excluding connection-setup, unused optional and compensation endpoints. The reference still counts 72 endpoints (D15). The invoice retrieval row drops the single-invoice call, which the card places outside the route, and lists book-entries.info only for incremental reads where headers are missing for changed lines. The outstanding row adds account-histories.info, called once per open sales invoice missing from the customer ledger list (frequency depends on H8). Misc operations are no longer listed under the analytics percentage converter, since they carry one analytic account per line.",
-    "why": "Review S1-16: the tile disagreed with appendix A (35 endpoints with a case-scope use) and with the route cards. The corrected build shows \"35 of 72 Horus endpoints called, including optional ones\".",
-    "kind": "Correction",
-    "impact": "Low"
+    "impact": "High"
    }
   ]
  },
