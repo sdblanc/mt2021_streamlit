@@ -19,11 +19,12 @@
   --step--1: 0.8125rem; --step-0: 0.9375rem; --step-1: 1.0625rem; --step-2: 1.3125rem; --step-3: 1.75rem; --step-4: 2.25rem;
   --radius: 6px;
   --rail: 15.5rem;
+  --line-strong: #8a93a8;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0d1220; --surface: #141a2b; --surface-2: #1a2136; --ink: #e5e8f1; --muted: #9ca4b9; --line: #262e45;
-    --accent: #8d9fff; --accent-ink: #0d1220; --accent-soft: #1d2548;
+    --accent: #8d9fff; --accent-ink: #0d1220; --accent-soft: #1d2548; --line-strong: #5a6480;
     --ok: #63d19b; --ok-bg: #12301f; --warn: #f2b54e; --warn-bg: #33270f; --bad: #ff8e9b; --bad-bg: #3a1821; --unk: #aab2c6; --unk-bg: #222a40;
     --f-doc: #63d19b; --f-ded: #8d9fff; --f-ass: #f2b54e; --f-open: #ff8e9b;
     color-scheme: dark;
@@ -51,7 +52,7 @@ code { background: var(--surface-2); padding: 0.08em 0.35em; border-radius: 4px;
 @media (max-width: 960px) { .page { grid-template-columns: minmax(0, 1fr); gap: 0; padding-inline: 1rem; } }
 
 /* Contents rail */
-.rail { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding-block: 2rem 2rem; }
+.rail { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding-block: 2rem; padding-inline: 4px; }
 .rail .brandline { font-size: var(--step--1); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 0.75rem; }
 .rail nav ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.125rem; }
 .rail nav a { display: block; padding: 0.3rem 0.6rem; border-radius: var(--radius); color: var(--muted); text-decoration: none; font-size: var(--step--1); line-height: 1.35; border-left: 2px solid transparent; }
@@ -69,7 +70,9 @@ code { background: var(--surface-2); padding: 0.08em 0.35em; border-radius: 4px;
 
 .btn { display: inline-flex; align-items: center; gap: 0.4rem; font: 500 var(--step--1)/1 var(--font-sans); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.5rem 0.7rem; cursor: pointer; }
 .btn:hover { border-color: var(--accent); }
-.btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); border-color: var(--accent); }
+.btn[aria-pressed="true"]::before { content: "✓"; font-weight: 700; }
+.btn[aria-pressed="false"]::before { content: "○"; }
 
 /* Main column */
 main { min-width: 0; padding-block: 2rem 0; }
@@ -135,7 +138,7 @@ details.route > summary .r-line { grid-column: 1 / -1; color: var(--muted); font
 details.route > summary:hover { background: var(--surface-2); }
 details.route[open] > summary { border-bottom: 1px solid var(--line); }
 details.route .r-body { padding: 0.25rem 1rem 1rem; min-width: 0; }
-.caret { display: inline-block; transition: transform 0.15s ease; color: var(--muted); margin-right: 0.35rem; }
+.caret { display: inline-block; width: 0; height: 0; border-left: 6px solid var(--muted); border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; margin-right: 0.55rem; vertical-align: 0.1em; transition: transform 0.15s ease; }
 details[open] > summary .caret { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .caret { transition: none; } }
 
@@ -189,4 +192,19 @@ main p, main li, .flow li, .endpoint-list li, .r-line, .r-path, .sub { overflow-
   .chip { white-space: normal; }
   h1 { font-size: var(--step-3); }
   h2 { font-size: var(--step-2); }
+}
+
+.btn, .filters input[type="search"] { border-color: var(--line-strong); }
+.table-wrap:has(> table.fieldmap) { max-height: 80vh; overflow: auto; }
+.table-wrap {
+  background:
+    linear-gradient(to right, var(--surface) 30%, transparent) left / 2rem 100% no-repeat local,
+    linear-gradient(to left, var(--surface) 30%, transparent) right / 2rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / .18), transparent) left / .75rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / .18), transparent) right / .75rem 100% no-repeat scroll,
+    var(--surface);
+}
+.to-top { display: none; }
+@media (max-width: 960px) {
+  .to-top { display: inline-flex; position: fixed; right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); z-index: 10; box-shadow: 0 2px 8px rgb(0 0 0 / .15); text-decoration: none; }
 }

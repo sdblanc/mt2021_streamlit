@@ -164,13 +164,13 @@ def next_section(groups, cross):
 
 def appendix_section(groups, cross):
     inv = sorted(cross['inventory'], key=lambda r: r['path'])
-    h = ['<details class="route" id="appendix-inventory"><summary><span class="r-title"><span class="caret">▸</span>A. Horus endpoint inventory (72 endpoints)</span>'
+    h = ['<details class="route" id="appendix-inventory"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>A. Horus endpoint inventory (72 endpoints)</span>'
          '<span class="r-line">Every endpoint in the Horus API reference, what it does, and which Chift route in scope uses it.</span></summary><div class="r-body">']
     h.append('<div class="table-wrap"><table><thead><tr><th>Endpoint</th><th>Purpose</th><th>Writes</th><th>Used for (Chift routes in scope)</th></tr></thead><tbody>')
     for r in inv:
         h.append(f'<tr><td class="mono">{esc(r["method"])} {esc(r["path"])}</td><td>{inline(r["purpose"])}</td><td>{"Yes" if r["writes"] else "No"}</td><td>{inline(r["chift_relevance"])}</td></tr>')
     h.append('</tbody></table></div></div></details>')
-    h.append('<details class="route" id="appendix-decisions"><summary><span class="r-title"><span class="caret">▸</span>B. Cross-route working assumptions</span>'
+    h.append('<details class="route" id="appendix-decisions"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>B. Cross-route working assumptions</span>'
              '<span class="r-line">Proposals applied consistently across all route mappings. They are not agreed rules: most depend on an open question in section 8 and will change if the answer differs.</span></summary><div class="r-body">')
     h.append('<div class="table-wrap"><table><thead><tr><th>#</th><th>Working assumption</th><th>Rationale</th><th>Depends on</th></tr></thead><tbody>')
     for d in K.DECISIONS:

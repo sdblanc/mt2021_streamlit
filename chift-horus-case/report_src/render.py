@@ -132,8 +132,11 @@ def endpoint_list(eps):
     return '<ul class="endpoint-list">' + ''.join(items) + '</ul>'
 
 
+STEP_NUM = re.compile(r'^\s*(?:step\s*)?\d+[a-z]?[.):]\s+', re.I)
+
+
 def flow(steps):
-    return '<ol class="flow">' + ''.join(f'<li>{inline(re.sub(r"^\\s*\\d+[a-z]?[.)]\\s+", "", s))}</li>' for s in steps) + '</ol>'
+    return '<ol class="flow">' + ''.join(f'<li>{inline(STEP_NUM.sub("", s))}</li>' for s in steps) + '</ol>'
 
 
 def bullet_list(items, fmt):
@@ -147,7 +150,7 @@ def route_card(rc):
     chips = ' '.join(chip(v) for v in rc['verdicts'])
     body = [f'<p>{rc["brief"]}</p>' if rc.get('brief') else '']
     if rc.get('summary'):
-        body.append(f'<details class="route inner"><summary><span class="r-title"><span class="caret">▸</span>Detailed analysis</span></summary><div class="r-body">{rich(rc["summary"])}</div></details>')
+        body.append(f'<details class="route inner"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>Detailed analysis</span></summary><div class="r-body">{rich(rc["summary"])}</div></details>')
     body.append('<div class="two-col"><div>')
     body.append('<h4>Horus endpoints</h4>' + endpoint_list(rc['endpoints']))
     body.append('</div><div>')
@@ -156,15 +159,15 @@ def route_card(rc):
     if rc.get('considerations'):
         body.append('<h4>Considerations and limitations</h4>' + bullet_list(rc['considerations'], lambda x: f'{inline(x["text"])} {lbl(x["label"])}'))
     if rc.get('fields'):
-        body.append(f'<details class="route inner"><summary><span class="r-title"><span class="caret">▸</span>Key field mapping ({len(rc["fields"])} rows)</span></summary><div class="r-body">')
+        body.append(f'<details class="route inner"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>Key field mapping ({len(rc["fields"])} rows)</span></summary><div class="r-body">')
         body.append(field_table(rc['id'] + '-fields', rc['fields']))
         body.append('</div></details>')
     if rc.get('questions'):
-        body.append(f'<details class="route inner"><summary><span class="r-title"><span class="caret">▸</span>Detailed open questions ({len(rc["questions"])})</span></summary><div class="r-body">')
+        body.append(f'<details class="route inner"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>Detailed open questions ({len(rc["questions"])})</span></summary><div class="r-body">')
         body.append(bullet_list(rc['questions'], lambda q: f'<span class="tag">{esc(q["for_whom"])}</span> {inline(q["question"])} <span class="sub">{inline(q.get("why",""))}</span>'))
         body.append('</div></details>')
     return (f'<details class="route" id="{rc["id"]}"><summary>'
-            f'<span class="r-title"><span class="caret">▸</span>{esc(rc["title"])}</span><span>{chips}</span>'
+            f'<span class="r-title"><span class="caret" aria-hidden="true"></span>{esc(rc["title"])}</span><span>{chips}</span>'
             f'<span class="r-path">{esc(rc["paths"])}</span>'
             f'<span class="r-line">{rc["one_line"]}</span></summary>'
             f'<div class="r-body">{"".join(body)}</div></details>')

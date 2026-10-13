@@ -95,13 +95,13 @@ def build(data_dir, out_html):
 </style>
 </head>
 <body>
-<div class="page">
+<div class="page" id="top">
   <aside class="rail" aria-label="Contents">
     <p class="brandline">{esc(C.RAIL_LABEL)}</p>
     <button class="btn toc-toggle" id="toc-toggle" aria-expanded="false" aria-controls="toc">Contents</button>
     <nav id="toc">{nav(rail_items)}</nav>
     <div class="tools">
-      <button class="btn" id="evidence-toggle" aria-pressed="true">Hide evidence</button>
+      <button class="btn" id="evidence-toggle" aria-pressed="true">Evidence column</button>
       <button class="btn" id="theme-toggle">Dark theme</button>
     </div>
   </aside>
@@ -111,6 +111,7 @@ def build(data_dir, out_html):
     <footer class="doc-foot">{C.footer_html()}</footer>
   </main>
 </div>
+<a class="btn to-top" href="#top">↑ Contents</a>
 <script>
 {js}
 </script>

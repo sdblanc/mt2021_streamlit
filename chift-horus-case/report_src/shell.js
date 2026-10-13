@@ -29,20 +29,23 @@
     a.addEventListener('click', function () { if (rail && window.innerWidth <= 960) { rail.classList.remove('open'); if (tocBtn) tocBtn.setAttribute('aria-expanded', 'false'); } });
   });
 
-  // Active section highlight
+  // Active section highlight (position-based scroll spy)
   var links = {};
   document.querySelectorAll('.rail nav a[href^="#"]').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
-  if ('IntersectionObserver' in window) {
-    var obs = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting && links[en.target.id]) {
-          Object.keys(links).forEach(function (k) { links[k].classList.remove('active'); });
-          links[en.target.id].classList.add('active');
-        }
-      });
-    }, { rootMargin: '-10% 0px -80% 0px' });
-    Object.keys(links).forEach(function (id) { var el = document.getElementById(id); if (el) obs.observe(el); });
+  var ids = Object.keys(links), ticking = false;
+  function spy() {
+    ticking = false;
+    if (!ids.length) return;
+    var line = window.innerHeight * 0.25, cur = ids[0];
+    ids.forEach(function (id) { var el = document.getElementById(id); if (el && el.getBoundingClientRect().top <= line) cur = id; });
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) cur = ids[ids.length - 1];
+    ids.forEach(function (k) { links[k].classList.toggle('active', k === cur); });
+    var parentLi = links[cur].parentElement.parentElement.closest('li');
+    if (parentLi) { var pa = parentLi.querySelector(':scope > a'); if (pa) pa.classList.add('active'); }
   }
+  window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(spy); } }, { passive: true });
+  window.addEventListener('resize', spy);
+  spy();
 
   // Open a route card when navigated to by anchor
   function openFromHash() {
@@ -51,17 +54,24 @@
     if (el && el.tagName === 'DETAILS') el.open = true;
   }
   window.addEventListener('hashchange', openFromHash); openFromHash();
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]'); if (!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if (el && el.tagName === 'DETAILS') el.open = true;
+  });
 
   // Expand / collapse all route cards within a container
   document.querySelectorAll('[data-expand]').forEach(function (btn) {
+    var scope = document.getElementById(btn.getAttribute('data-expand'));
+    if (!scope) return;
+    function anyClosed() { return Array.prototype.some.call(scope.querySelectorAll('details'), function (d) { return !d.open; }); }
+    function sync() { btn.textContent = anyClosed() ? 'Expand all' : 'Collapse all'; }
     btn.addEventListener('click', function () {
-      var scope = document.getElementById(btn.getAttribute('data-expand'));
-      if (!scope) return;
-      var cards = scope.querySelectorAll('details');
-      var anyClosed = Array.prototype.some.call(cards, function (d) { return !d.open; });
-      cards.forEach(function (d) { d.open = anyClosed; });
-      btn.textContent = anyClosed ? 'Collapse all' : 'Expand all';
+      var open = anyClosed();
+      scope.querySelectorAll('details').forEach(function (d) { d.open = open; });
+      sync();
     });
+    scope.addEventListener('toggle', sync, true);
   });
 
   // Evidence column toggle (all field-mapping tables)
@@ -69,7 +79,6 @@
   if (evBtn) evBtn.addEventListener('click', function () {
     var hidden = document.body.classList.toggle('hide-evidence');
     evBtn.setAttribute('aria-pressed', hidden ? 'false' : 'true');
-    evBtn.textContent = hidden ? 'Show evidence' : 'Hide evidence';
   });
 
   // Field-mapping filters

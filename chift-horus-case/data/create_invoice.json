@@ -1035,7 +1035,7 @@
    "chift_required": true,
    "horus_source": "CompanyId sent (resolved or created); read-back GET /book-entries.info → CompanyDetail.Company.Id",
    "classification": "DIRECT",
-   "rule": "The CompanyId actually used, including one found, flag-updated or created from partner_info (D10). The read-back can confirm it.",
+   "rule": "The CompanyId actually used, including one found, flag-updated or created from partner_info (D10). The read-back can confirm it. Nested addresses[] and bank_accounts[] attributes are filled exactly as in the client creation table (response.addresses[].* and response.bank_accounts[].*, shared D9 mapper); bank_accounts needs POST /ibans.list for the CompanyId and stays [] unless that call is made.",
    "label": "D",
    "evidence": "POST /companies.new → RESPONSE 200 Id; GET /book-entries.info → CompanyDetail.Company {Type: \"Companies\", Id}"
   },
