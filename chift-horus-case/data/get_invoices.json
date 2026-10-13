@@ -6,17 +6,17 @@
    "chift_path": "/consumers/{consumer_id}/accounting/invoices/multi-analytic-plans/type/{invoice_type}",
    "chift_name": "Get invoices by type (sale/purchase entries - Multiple Analytic Plans)",
    "verdict": "workaround",
-   "one_line": "Horus has no endpoint that lists invoices, so the connector rebuilds each one from the ledger. Headers come from POST /book-entries.list, one call per daybook of BOTH sibling types (200+250 for customer_*, 100+150 for supplier_*), because credit notes may sit in invoice daybooks (D1); the partner is sideloaded. Lines, VAT, analytics, matching and the partner-line sign come from one POST /account-histories.list call. Each entry is classified as invoice or credit note by that sign, and for sales TransactionType from POST /invoices.sales.outstanding.list overrides it on open items (mandatory, A). Payments come from a second account-histories.list call joined on MatchNo. tax_code is the connector's synthetic VAT id (D2), reference/customer_memo are split from the header comment (D3), and amounts are in EUR unless invoice-currency totals are known (D4). Pagination, day-level dates, payment_status and approval_status are emulated."
+   "one_line": "Horus has no general invoice list (invoices.sales.outstanding.list covers only open sales items, without lines), so the connector rebuilds each invoice from the ledger. Headers come from POST /book-entries.list, one call per daybook of BOTH sibling types (200+250 for customer_*, 100+150 for supplier_*), because credit notes may sit in invoice daybooks (D1); the partner is sideloaded. Lines, VAT, analytics, matching and the partner-line sign come from one POST /account-histories.list call. Each entry is classified as invoice or credit note by its daybook type, with the partner-line sign used only in folders without a credit-note daybook (D1, A pending H2); TransactionType on open sales items is only a consistency check. Payments come from a second account-histories.list call joined on MatchNo. tax_code is the connector's synthetic VAT id (D2), reference/customer_memo are split from the header comment (D3), and amounts are in EUR unless invoice-currency totals are known (D4). Pagination, day-level dates, payment_status and approval_status are emulated."
   }
  ],
- "summary": "Horus has no endpoint that reads sales or purchase invoices. The 72-endpoint reference only offers invoices.*.new/update and invoices.sales.outstanding.list/info, which return open sales items only, and pushed invoices 'are converted into book entries in the corresponding daybook' (Guide: Posting sales & purchase invoices), so each Chift invoice must be rebuilt from the ledger. The connector caches every daybook (daybooks.list) and, per D1, ALWAYS reads both sibling daybook types (customer_* → 200 Sale + 250 SaleCreditNote; supplier_* → 100 Purchase + 150 PurchaseCreditNote), one book-entries.list call per daybook because DaybookId is singular and required, with the partner sideloaded through Include 'CompanyDetail.Company'. One account-histories.list call returns all lines, VAT, analytics, the partner ledger account, due dates and matching state, grouped by BookEntry.Id. Every entry is then classified by the partner-line sign (customer: net debit = invoice, net credit = credit note; supplier: net credit = invoice, net debit = credit note); for sales, TransactionType from invoices.sales.outstanding.list (loaded once per sales request) overrides the sign on open items. This classification is mandatory and labelled A until Horus confirms it or exposes the document Type on read. Payments come from a second account-histories.list call on the partner ledger accounts across all daybooks, joined on (company, account type, MatchNo); payments[].journal_type follows the shared daybook table (D6). Harmonised conventions: lines[].tax_code is the canonical synthetic VAT id (D2), returned only when exactly one catalogue entry matches, otherwise null; reference and customer_memo come from splitting the header comment on the first ' | ' (D3, read location A); amounts are treated as folder-currency EUR and a foreign-currency invoice is returned in its own currency only when the open-sales list gives TotalCurrencyAmount, otherwise in EUR with currency 'EUR' (D4); the partner uses the shared company mapper (D9); analytics come from the shared per-folder cache with Free schemas omitted (D8); folder_id follows D7 and every Id-only call checks Data.Folder.Id (D13). Pagination, day-level dates, payment_status and approval_status are emulated because Horus has no pagination and periods are whole months. The main risks: every update creates a new book entry Id and deletions leave no signal, the invoice/credit-note split rests on an undocumented sign rule, lines have no quantity or unit price, per-line tax_amount, tax_code identity (null when TaxKind is ambiguous) and payment allocation are approximations, foreign-currency amounts depend on an unconfirmed assumption, and 'paid' is inferred from full matching. GET /book-entries.info reads one entry by Id without a daybook or period, but returns only the header (lines as references, no sideloading), so it serves single-invoice reads and the attachments Document lookup, not the list path.",
+ "summary": "Horus has no general endpoint that lists or reads sales or purchase invoices. The 72-endpoint reference only offers invoices.*.new/update and invoices.sales.outstanding.list/info, which return open sales items only, and pushed invoices 'are converted into book entries in the corresponding daybook' (Guide: Posting sales & purchase invoices), so each Chift invoice must be rebuilt from the ledger. The connector caches every daybook (daybooks.list) and, per D1, ALWAYS reads both sibling daybook types (customer_* → 200 Sale + 250 SaleCreditNote; supplier_* → 100 Purchase + 150 PurchaseCreditNote), one book-entries.list call per daybook because DaybookId is singular and required, with the partner sideloaded through Include 'CompanyDetail.Company'. One account-histories.list call returns all lines, VAT, analytics, the partner ledger account, due dates and matching state, grouped by BookEntry.Id. Every entry is then classified by its daybook type (proposed rule: 250/150 = credit note, 200/100 = invoice). Only in a folder without a credit-note daybook, where the create route posts refunds into 200/100, does the partner-line sign decide (customer: net credit = credit note; supplier: net debit = credit note). For sales, TransactionType from invoices.sales.outstanding.list (loaded once per sales request) is a consistency check on open items and never reclassifies. The rule is a heuristic labelled A until Horus answers H2 (document Type on read); Chift chooses between it and a sign-first rule (C5). Payments come from a second account-histories.list call on the partner ledger accounts across all daybooks, joined on (company, account type, MatchNo); payments[].journal_type follows the shared daybook table (D6). Harmonised conventions: lines[].tax_code is the canonical synthetic VAT id (D2), encoded against the folder's tax-combination list (Legislation BE or LU, and direction) and returned only when exactly one entry matches, otherwise null; reference and customer_memo come from splitting the header comment on the first ' | ' (D3, read location A); amounts are treated as folder-currency EUR and a foreign-currency invoice is returned in its own currency only when the open-sales list gives TotalCurrencyAmount, otherwise in EUR with currency 'EUR' (D4); the partner uses the shared company mapper (D9); analytics come from the shared per-folder cache with Free schemas omitted (D8); folder_id follows D7 (a folder not selected at activation is rejected) and every Id-only call checks Data.Folder.Id (D13). Pagination, day-level dates, payment_status and approval_status are emulated because Horus documents no pagination and periods are whole months. The main risks: every update creates a new book entry Id and deletions leave no signal (a periodic full re-sync is proposed), updated_after narrows results only inside the mandatory month window, the invoice/credit-note split is a heuristic pending H2, lines have no quantity or unit price, per-line tax_amount, tax_code identity (null when TaxKind is ambiguous) and payment allocation are approximations, foreign-currency amounts depend on an unconfirmed assumption, and 'paid' is inferred from full matching. GET /book-entries.info reads one entry by Id without a daybook or period, but returns only the header (lines as references, no sideloading), so it serves single-invoice reads and the attachments Document lookup, not the list path. Call budget per request (cold reference cache excluded): one book-entries.list per selected daybook of the two sibling types, one account-histories.list for lines (plus one for payments when requested), and one invoices.sales.outstanding.list for sales types; optional ibans.list per partner.",
  "verdict": "workaround",
- "verdict_rationale": "Under the D11 calibration the route is 'supported with workaround'. It is feasible because every core element can be read: header, partner, accounts, VAT rate, analytics, matching and the document reference. It still needs several calls per request: with D = the number of daybooks of the two sibling types (D1), sales need D + 2 (headers, lines, the open-sales list that gives TransactionType) and D + 3 with payments; purchases need D + 1 and D + 2 with payments. A cold cache adds reference calls (folders.info, daybooks.list, fiscal-years.list when dates are missing, accounts.list for the D9 partner account_number, cost-schemas.list plus cost-sections.list per List schema for D8, folders.list only under the D7 fallback). It also needs emulated filters (pagination, day-level dates, payment_status, approval_status, the mandatory sign-based invoice/refund split of D1) and accepts lost or approximated fields: quantity/unit_price/unit_of_measure, delivery_date, payment_term_id, payment_method_id, withholding_tax, cash-discount terms, Free-schema analytics (D8), partner is_company (always true, D9) and the 'cancelled' status are lost, while per-line tax_amount, tax_code (null when ambiguous, D2), foreign-currency amounts (EUR fallback, D4), payment dedicated_amount and 'paid' (inferred from full matching) are approximations. It is not 'supported' because no native invoice read exists, and not 'not_supported' because all core data is readable.",
+ "verdict_rationale": "Under the D11 calibration the route is 'supported with workaround'. It is feasible because every core element can be read: header, partner, accounts, VAT rate, analytics, matching and the document reference. It still needs several calls per request: with D = the number of daybooks of the two sibling types (D1), sales need D + 2 (headers, lines, and the open-sales list for the D1 consistency check, D3 and D4) and D + 3 with payments; purchases need D + 1 and D + 2 with payments. An incremental call adds one single-entry call per changed entry that comes back incomplete. A cold cache adds reference calls (folders.info, daybooks.list, fiscal-years.list when dates are missing, accounts.list for the D9 partner account_number, cost-schemas.list plus cost-sections.list per List schema for D8, folders.list only under the D7 fallback). It also needs emulated filters (pagination, day-level dates, payment_status, approval_status) and the D1 invoice/refund split (daybook type, plus a sign heuristic in folders without a credit-note daybook; conditional on H2), and it accepts lost or approximated fields: quantity/unit_price/unit_of_measure, delivery_date, payment_term_id, payment_method_id, withholding_tax, cash-discount terms, Free-schema analytics (D8), partner is_company (always true, D9) and the 'cancelled' status are lost, while per-line tax_amount, tax_code (null when ambiguous, D2), foreign-currency amounts (EUR fallback, D4), payment dedicated_amount and 'paid' (inferred from full matching) are approximations. It is not 'supported' because no native invoice read exists, and not 'not_supported' because all core data is readable.",
  "horus_endpoints": [
   {
    "method": "POST",
    "path": "/daybooks.list",
-   "role": "Called WITHOUT a Types filter and cached in full per folder. The connector selects the daybooks of BOTH sibling types client-side (D1): customer_invoice / customer_refund → Types 200 + 250; supplier_invoice / supplier_refund → Types 100 + 150. It validates journal_ids against that pair and builds a map keyed by Id and by SearchKey. Payment lines only carry DaybookSearchKey, so this map resolves payments[].journal_id, journal_name (Heading) and journal_type (Type, through the shared D6 table) for any daybook type.",
+   "role": "Called WITHOUT a Types filter and cached in full per folder. The connector selects the daybooks of BOTH sibling types client-side (D1): customer_invoice / customer_refund → Types 200 + 250; supplier_invoice / supplier_refund → Types 100 + 150. It validates journal_ids against that pair (an unknown id triggers one cache refresh) and builds a map keyed by Id and by SearchKey. Payment lines only carry DaybookSearchKey, so this map resolves payments[].journal_id, journal_name (Heading) and journal_type (Type, through the shared D6 table) for any daybook type.",
    "pattern": "lookup",
    "cardinality": "cached reference data (1 per folder, per TTL)",
    "evidence": "POST /daybooks.list → Filter.Types (optional): '`100`: Purchase - `150`: PurchaseCreditNote - `200`: Sale - `250`: SaleCreditNote - `500`: Bank ...'; Data[] → Id, SearchKey, Heading, Type, IsUsed; Guide: Data model: 'search key ( SearchKey ), unique within the folder'; Guide: Posting sales & purchase invoices: 'types 200 / 250 for sales and 100 / 150 for purchases'"
@@ -40,15 +40,15 @@
   {
    "method": "POST",
    "path": "/account-histories.list",
-   "role": "Call 1 (all daybooks of both sibling types via DaybookIds, D1): all lines of the candidate entries. Partner lines (AccountType 100/200) give the net debit/credit sign that classifies each entry as invoice or credit note (D1), CurrencyCode (foreign-currency detection, D4), the partner ledger account, DueDate, MatchNo/MatchStatus and the partner-line Comment (first source of the header comment, D3). Other non-VAT lines give the Chift lines, VAT lines (400) the tax amounts, VatDetail the rate and the components of the synthetic tax_code (D2), CostDetail the analytics (D8). Call 2 (payments): lines on the partner ledger accounts (Filter.AccountSearchKeys) across ALL daybooks over a wider window, joined on (Company.Id, AccountType, MatchNo).",
+   "role": "Call 1 (all daybooks of both sibling types via DaybookIds, D1): all lines of the candidate entries. Partner lines (AccountType 100/200) give the net debit/credit sign (used by D1 only in folders without a credit-note daybook), CurrencyCode (foreign-currency detection, D4), the partner ledger account, DueDate, MatchNo/MatchStatus and the partner-line Comment (first source of the header comment, D3). Other non-VAT lines give the Chift lines, VAT lines (400) the tax amounts, VatDetail the rate and the components of the synthetic tax_code (D2), CostDetail the analytics (D8). In an incremental call it takes the same ModifiedAfter as the header calls. Call 2 (payments, only when include_payments=true): lines on the partner ledger accounts (Filter.AccountSearchKeys) across ALL daybooks over a wider window, joined on (Company.Id, AccountType, MatchNo).",
    "pattern": "primary",
-   "cardinality": "1 per Chift request for invoice lines; +1 when include_payments=true or payment_status!=all",
-   "evidence": "POST /account-histories.list → Filter.DaybookIds: 'Filters on daybooks specified by their id.'; Filter.AccountSearchKeys: 'Filters on account searchkeys matching the *starts with* clause.'; Guide: Reading accounting data: 'returns every entry line of the folder over a period, across all daybooks'"
+   "cardinality": "1 per Chift request for invoice lines; +1 when include_payments=true; in an incremental call, plus one single-entry call per changed entry that came back incomplete",
+   "evidence": "POST /account-histories.list → Filter.DaybookIds: 'Filters on daybooks specified by their id.'; Filter.AccountSearchKeys: 'Filters on account searchkeys matching the *starts with* clause.'; Guide: Reading accounting data: 'returns every entry line of the folder over a period, across all daybooks'; Filter.ModifiedAfter: '*NULL* by default. Include only account-histories modified after a given date.'; Filter.CompanyId: string // 'Filters on a company specified by its id.'"
   },
   {
    "method": "POST",
    "path": "/account-histories.list",
-   "role": "Variant with Filter.BookEntryId: all lines of ONE book entry (with VatDetail, CostDetail, MatchDetail and the Document ref) in one call. It is the line call of a single-invoice read or refresh, made after GET /book-entries.info. The month window is still mandatory, so it is set from the book-entries.info Date (that month, optionally widened by 1 month on each side because the period basis is unconfirmed, A). The attachments route no longer needs this call, because book-entries.info returns the Document ref without a period. The partner-line sign of these lines classifies the single entry as invoice or credit note (D1).",
+   "role": "Variant with Filter.BookEntryId: all lines of ONE book entry (with VatDetail, CostDetail, MatchDetail and the Document ref) in one call. It is the line call of a single-invoice read or refresh, made after GET /book-entries.info. The month window is still mandatory, so it is set from the book-entries.info Date (that month, optionally widened by 1 month on each side because the period basis is unconfirmed, A). The attachments route no longer needs this call, because book-entries.info returns the Document ref without a period. The daybook type classifies the entry (D1); the partner-line sign is used only in folders without a credit-note daybook.",
    "pattern": "alternative",
    "cardinality": "1 per invoice, only for a single-invoice read or refresh (never in the list path)",
    "evidence": "POST /account-histories.list → Filter.BookEntryId: 'Filters on a book entry specified by its id.'; StartMonth *, StartYear *, EndMonth *, EndYear *; Data[].Document: object|null {Type: 'Documents', Id}; GET /book-entries.info → Data.Date: string(date-time)"
@@ -56,15 +56,15 @@
   {
    "method": "POST",
    "path": "/invoices.sales.outstanding.list",
-   "role": "Sales types only, loaded once per request (cached per folder briefly) and joined on BookEntry.Id. TransactionType ('0: Sale invoice' / '1: Sale credit note') overrides the partner-line sign for open sales items in the mandatory D1 classification. Remark is the third source of the header comment (D3). TotalCurrencyAmount and Currency are the only read-side invoice-currency amounts (D4). OpenAmount, PaymentStatus, PaymentRemark and LinkedElements (payments, credit notes, miscellaneous operations) serve payments and payment_status. There is no date, daybook or ModifiedAfter filter, so each call returns every open item of the folder.",
+   "role": "Sales types only, loaded once per request (cached per folder briefly) and joined on BookEntry.Id. TransactionType ('0: Sale invoice' / '1: Sale credit note') is compared with the D1 classification for open sales items and mismatches are logged; it does not reclassify, so a class stays stable once the item is closed. Remark is the third source of the header comment (D3). TotalCurrencyAmount and Currency are the only read-side invoice-currency amounts (D4). OpenAmount, PaymentStatus, PaymentRemark and LinkedElements (payments, credit notes, miscellaneous operations) serve payments and payment_status. There is no date, daybook or ModifiedAfter filter, so each call returns every open item of the folder.",
    "pattern": "enrichment",
-   "cardinality": "1 per Chift request for sales types (customer_invoice / customer_refund), whatever include_payments says, because D1 needs TransactionType; 0 for purchase types; payload independent of the requested period",
+   "cardinality": "1 per Chift request for sales types (customer_invoice / customer_refund), whatever include_payments says, because D3 (Remark), D4 (invoice-currency amounts) and the D1 consistency check use it; 0 for purchase types; payload independent of the requested period",
    "evidence": "POST /invoices.sales.outstanding.list: 'Get a list of open invoices (and/or linked payments) for a given folder, and eventually filter on company ids.' Filter: CompanyIds, ConfirmedOnly only; Data[] → TransactionType: '`0`: Sale invoice - `1`: Sale credit note - `2`: Payment - `3`: Miscellaneous operation', TotalCurrencyAmount: number|null, Currency: string|null, Remark: string|null, BookEntry: object|null"
   },
   {
    "method": "GET",
    "path": "/invoices.sales.outstanding.info",
-   "role": "Per-invoice version of the outstanding list (linked elements of one open sales invoice). Not used in the list path because it creates an N+1 pattern. In a single sales invoice read it replaces the whole-folder list: one call by BookEntryId gives TransactionType (D1 override), Remark (D3) and TotalCurrencyAmount (D4) for that entry; a 404 or an empty answer means the item is not open, so the sign alone decides.",
+   "role": "Per-invoice version of the outstanding list (linked elements of one open sales invoice). Not used in the list path because it creates an N+1 pattern. In a single sales invoice read it replaces the whole-folder list: one call by BookEntryId gives TransactionType (D1 consistency check), Remark (D3) and TotalCurrencyAmount (D4) for that entry; a 404 or an empty answer means the item is not open, so the D1 rule alone decides.",
    "pattern": "alternative",
    "cardinality": "1 per invoice (N+1) in the list path, avoid; 1 per single sales invoice read",
    "evidence": "GET /invoices.sales.outstanding.info: 'Get information about an open sale invoice/credit note, and its eventual linked elements (partial payments, etc.).'"
@@ -136,15 +136,15 @@
   {
    "method": "GET",
    "path": "/folders.info",
-   "role": "Folder flags WithAnalytics and IsVatLiable, which decide whether IncludeCostDetail/IncludeVatDetail are useful. There is no currency field.",
+   "role": "Folder flags WithAnalytics and IsVatLiable, which decide whether IncludeCostDetail/IncludeVatDetail are useful, and Legislation (BE or LU), which selects the D2 tax-combination list used to encode tax_code. There is no currency field.",
    "pattern": "lookup",
    "cardinality": "cached reference data (1 per folder)",
-   "evidence": "GET /folders.info → WithAnalytics: boolean; IsVatLiable: boolean"
+   "evidence": "GET /folders.info → WithAnalytics: boolean; IsVatLiable: boolean; Legislation: string enum[\"BE\", \"LU\"]"
   },
   {
    "method": "POST",
    "path": "/fiscal-years.list",
-   "role": "Supplies the mandatory month window when the Chift request has no date_from/date_to (for example an updated_after-only sync). Call it with Filter.IncludeFuture=true, so entries already posted in a future fiscal year are covered.",
+   "role": "Supplies the mandatory month window when the Chift request has no date_from/date_to (for example an updated_after-only sync): proposed default from the start of the current fiscal year to the latest EndDate (C11). Call it with Filter.IncludeFuture=true, so entries already posted in a future fiscal year are covered.",
    "pattern": "lookup",
    "cardinality": "cached reference data (1 per folder), only when dates are missing",
    "evidence": "POST /fiscal-years.list → StartDate, EndDate; Filter.IncludeFuture: 'boolean // *FALSE* by default'"
@@ -160,7 +160,7 @@
   {
    "method": "GET",
    "path": "/documents.info",
-   "role": "Optional diagnostics only: document Remark, Status, and Type (210/220/300/310). It is not part of the D1 classification (partner-line sign plus TransactionType) nor of the D3 reference rule, and it is not needed for attachments_info. If called, check Data.Folder.Id = folder_id (D13).",
+   "role": "Optional diagnostics only: document Remark, Status, and Type (210/220/300/310). It is not part of the D1 classification (daybook type, with the partner-line sign only in folders without a credit-note daybook) nor of the D3 reference rule, and it is not needed for attachments_info. If called, check Data.Folder.Id = folder_id (D13).",
    "pattern": "optional",
    "cardinality": "1 per document (N+1), avoid by default",
    "evidence": "GET /documents.info → Type: '`210`: PurchaseInvoice - `220`: PurchaseCreditNote - `300`: SaleInvoice - `310`: SaleCreditNote'; Data.Folder: object; Guide: Documents & attachments: 'Remark Free remark, e.g. the invoice reference.'"
@@ -199,21 +199,21 @@
   }
  ],
  "call_sequence": [
-  "0. Chift resolves consumer_id to the Horus license (its own api_url plus an OAuth token valid 1 hour) and sets FolderId by the D7 rule: folder_id when given; if absent, the single folder selected at activation; if no selection is stored, the single folder returned by POST /folders.list {Mode: 0}; otherwise 400 'folder_id required'. A Horus 403 on any call → Chift 400 'folder not accessible with this connection'.",
-  "1. [cached per folder] GET /folders.info?Id={FolderId} returns WithAnalytics and IsVatLiable, which decide whether CostDetail and VatDetail are worth requesting. When lines are returned and WithAnalytics=true, load the shared D8 analytics cache: POST /cost-schemas.list, then POST /cost-sections.list per List-type schema with Filter.IncludeInactive=true. When include_partner_info=true, load POST /accounts.list for the D9 concentration-account SearchKey.",
-  "2. [cached per folder] POST /daybooks.list {FolderId} with NO Types filter. Cache every daybook and index it by Id and by SearchKey. Select the daybooks of BOTH sibling types client-side (D1): customer_invoice and customer_refund → Types 200 + 250; supplier_invoice and supplier_refund → Types 100 + 150. Intersect with journal_ids (split on ','), accepting any daybook of the pair. Optionally skip daybooks with IsUsed=false (A: semantics undocumented).",
-  "3. [only if date_from/date_to are missing] POST /fiscal-years.list {FolderId, Filter:{IncludeFuture:true}} to derive the mandatory StartMonth/StartYear/EndMonth/EndYear window (earliest StartDate to latest EndDate, or a Chift-defined default window).",
-  "4. Build the month window: StartMonth/Year from date_from and EndMonth/Year from date_to, optionally widened by 1 month on each side (assumption: the Horus period may refer to AccountingMonth/AccountingYear rather than Date). Convert updated_after to ISO 8601 with '+00:00' (Guide: Making requests).",
-  "5. For each selected daybook of the two sibling types, in parallel: POST /book-entries.list {FolderId, DaybookId, StartMonth, StartYear, EndMonth, EndYear, Filter:{ModifiedAfter?: updated_after, EntryTypes?: [100]}, Include: 'CompanyDetail.Company' when include_partner_info=true}. Returns the candidate headers plus Included.Companies. Do not call GET /book-entries.info per entry afterwards: its response has the same fields as a book-entries.list item, so it would add N calls and no data.",
-  "6. POST /account-histories.list {FolderId, same window, Filter:{DaybookIds:[all selected daybooks of both sibling types], ExcludedEntryTypes: [0,400,600,800,810,850,900,910,1000] when step 5 uses EntryTypes [100], IncludeReport:false, IncludeCompanyDetail:true, IncludeMatchDetail:true, IncludeVatDetail:true, IncludeCostDetail: WithAnalytics}}. Do not pass ModifiedAfter here: when updated_after is set, keep only lines whose BookEntry.Id came back in step 5, so no invoice is half-built. Group the lines by BookEntry.Id. Partner lines (AccountType 100/200) give the net sign, CurrencyCode, AccountSearchKey, DueDate, MatchDetail and Comment. VAT lines (400) give the tax amounts. Every other non-report line becomes a Chift line. Check that the sum of the lines equals the header TurnoverAmount. This call is needed even when include_invoice_lines=false, because D1 classifies on the partner line.",
-  "7. Classify (mandatory, D1, A) and filter. (a) Sales types only: POST /invoices.sales.outstanding.list {FolderId} once per request (cached per folder briefly), joined on BookEntry.Id; it also feeds D3 (Remark), D4 (TotalCurrencyAmount, Currency) and step 8. (b) Each entry: customer side, a net debit on the customer line = invoice and a net credit = credit note; supplier side, a net credit = invoice and a net debit = credit note. For open sales items, TransactionType (0 sale invoice / 1 sale credit note) overrides the sign. Entries with no partner line or a zero net fall back to the daybook Type (A). (c) Keep only the entries whose class matches invoice_type. Post-filter Date to [date_from, date_to] at day level. Apply approval_status (Verified) if requested.",
-  "8. If include_payments=true or payment_status!=all: (a) sales types: reuse the step-7a invoices.sales.outstanding.list result (OpenAmount, PaymentStatus and LinkedElements per BookEntry.Id). (b) Both sides: POST /account-histories.list {FolderId, window from the invoice window start to the current month, Filter:{AccountSearchKeys:[distinct partner-line AccountSearchKeys from step 6], IncludeCompanyDetail:true, IncludeMatchDetail:true}} with NO daybook filter, so offsets in any daybook (bank, cash, financial, misc, credit notes, external) are found. Drop the invoice entries' own lines, keep lines whose (CompanyDetail.Company.Id, AccountType, MatchNo) equals an invoice partner line, and resolve each DaybookSearchKey through the step-2 map; journal_type follows the shared D6 table. (c) customers.outstanding / suppliers.outstanding are not needed, because step 6 partner lines already carry MatchDetail.",
-  "9. Derive status (draft / posted / paid), payments[], due_dates[] (one element per partner line), attachments_info (Document ref: 'yes_to_request' or 'no') and accounting_info. Apply the harmonised conventions: reference / customer_memo from the header comment split on the first ' | ' (D3: partner-line Comment, then RemarkCompany, then sales Remark); lines[].tax_code from VatDetail through the D2 grammar, null unless exactly one catalogue entry matches; amounts in EUR with currency 'EUR' unless step 7a gives TotalCurrencyAmount for a foreign-currency open sales item (D4); main_currency_total = the EUR partner-line amount. Then apply the payment_status filter.",
+  "0. Chift resolves consumer_id to the Horus license (its own api_url plus an OAuth token valid 1 hour) and sets FolderId by the D7 rule: folder_id when given; if absent, the single folder selected at activation; if no selection is stored, the single folder returned by POST /folders.list {Mode: 0}; otherwise 400 'folder_id required'. A folder_id outside the activation selection → 400 'folder not selected for this connection' before any Horus call (D7). A Horus 403 on any call → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details.",
+  "1. [cached per folder] GET /folders.info?Id={FolderId} returns WithAnalytics, IsVatLiable and Legislation (selects the D2 tax-combination list used to encode tax_code); the first two decide whether CostDetail and VatDetail are worth requesting. When lines are returned and WithAnalytics=true, load the shared D8 analytics cache: POST /cost-schemas.list, then POST /cost-sections.list per List-type schema with Filter.IncludeInactive=true. When include_partner_info=true, load POST /accounts.list for the D9 concentration-account SearchKey.",
+  "2. [cached per folder] POST /daybooks.list {FolderId} with NO Types filter. Cache every daybook and index it by Id and by SearchKey. Select the daybooks of BOTH sibling types client-side (D1): customer_invoice and customer_refund → Types 200 + 250; supplier_invoice and supplier_refund → Types 100 + 150. Intersect with journal_ids (split on ','), accepting any daybook of the pair; an unknown id triggers one cache refresh, then 400 'journal not found in this folder' (see the journal_ids row). Optionally skip daybooks with IsUsed=false (A: semantics undocumented).",
+  "3. [only if date_from/date_to are missing] POST /fiscal-years.list {FolderId, Filter:{IncludeFuture:true}} to derive the mandatory StartMonth/StartYear/EndMonth/EndYear window (the Chift-defined default window, C11; proposal: from the start of the current fiscal year to the latest EndDate; earliest StartDate to latest EndDate only when Chift requires full history).",
+  "4. Build the month window: StartMonth/Year from date_from and EndMonth/Year from date_to, optionally widened by 1 month on each side (assumption: the Horus period may refer to AccountingMonth/AccountingYear rather than Date). Convert updated_after to ISO 8601 with '+00:00' (Guide: Making requests) and subtract the overlap margin (proposal: 5 minutes, A).",
+  "5. For each selected daybook of the two sibling types, in parallel: POST /book-entries.list {FolderId, DaybookId, StartMonth, StartYear, EndMonth, EndYear, Filter:{ModifiedAfter?: the step-4 value, EntryTypes?: [100]}, Include: 'CompanyDetail.Company' when include_partner_info=true}. Returns the candidate headers plus Included.Companies. Do not call GET /book-entries.info per entry afterwards: its response has the same fields as a book-entries.list item, so it would add N calls and no data.",
+  "6. POST /account-histories.list {FolderId, same window, Filter:{DaybookIds:[all selected daybooks of both sibling types], ExcludedEntryTypes: [0,400,600,800,810,850,900,910,1000] when step 5 uses EntryTypes [100], IncludeReport:false, IncludeCompanyDetail:true, IncludeMatchDetail:true, IncludeVatDetail:true, IncludeCostDetail: WithAnalytics}}. When updated_after is set, pass the same ModifiedAfter here, take the union of the changed BookEntry Ids from steps 5 and 6, and complete incomplete entries with single-entry calls (see the updated_after row): account-histories.list Filter.BookEntryId for an entry whose lines do not sum to its TurnoverAmount, GET /book-entries.info (D13 folder check) for changed lines whose header did not come back, so no invoice is half-built. Fallback while H10 is open: reload lines only for the months containing the changed entries' Dates, ±1 month (A). Group the lines by BookEntry.Id. Partner lines (AccountType 100/200) give the net sign, CurrencyCode, AccountSearchKey, DueDate, MatchDetail and Comment. VAT lines (400) give the tax amounts. Every other non-report line becomes a Chift line. Check that the sum of the lines equals the header TurnoverAmount. This call is needed even when include_invoice_lines=false, because payment_status, due dates, currency detection and, in folders without a credit-note daybook, the D1 classification use the partner line.",
+  "7. Classify (D1, A) and filter. (a) Sales types only: POST /invoices.sales.outstanding.list {FolderId} once per request (cached per folder briefly), joined on BookEntry.Id; it also feeds D3 (Remark), D4 (TotalCurrencyAmount, Currency) and step 8. (b) Each entry (D1): entries of a 250/150 daybook are credit notes and entries of a 200/100 daybook are invoices; in a folder without a 250 (or 150) daybook, entries of the 200 (100) daybook are classified by the partner-line sign (customer: net credit = credit note; supplier: net debit = credit note; no partner line or zero net = invoice). For open sales items, compare TransactionType with the result and log mismatches; never reclassify. (c) Keep only the entries whose class matches invoice_type. Post-filter Date to [date_from, date_to] at day level. Apply approval_status with the same rule as the response field (see query:approval_status).",
+  "8. If include_payments=true (payment_status is decided from the step-6 MatchDetail and never triggers this call): (a) sales types: reuse the step-7a invoices.sales.outstanding.list result (OpenAmount, PaymentStatus and LinkedElements per BookEntry.Id). (b) Both sides: POST /account-histories.list {FolderId, window from the invoice window start to the current month, Filter:{AccountSearchKeys:[distinct partner-line AccountSearchKeys from step 6], IncludeCompanyDetail:true, IncludeMatchDetail:true}} with NO daybook filter, so offsets in any daybook (bank, cash, financial, misc, credit notes, external) are found. Drop the invoice entries' own lines, keep lines whose (CompanyDetail.Company.Id, AccountType, MatchNo) equals an invoice partner line, and resolve each DaybookSearchKey through the step-2 map; journal_type follows the shared D6 table. This call returns every line of the shared collective accounts (e.g. 400000/440000) for all partners and all daybooks from the window start to today; Filter.CompanyId takes a single id. Mitigations: a per-folder cache of partner-account lines refreshed with ModifiedAfter, per-partner calls with Filter.CompanyId when few partners are involved, and the LinkedElements of the open-sales list for open sales items. (c) customers.outstanding / suppliers.outstanding are not needed, because step 6 partner lines already carry MatchDetail.",
+  "9. Derive status (draft / posted / paid), payments[], due_dates[] (one element per partner line), attachments_info (Document ref: 'yes_to_request' or 'no') and accounting_info. Apply the harmonised conventions: reference / customer_memo from the header comment split on the first ' | ' (D3: partner-line Comment, then RemarkCompany, then sales Remark); lines[].tax_code from VatDetail through the D2 grammar, null unless exactly one entry of the folder's list (Legislation + direction) matches; amounts in EUR with currency 'EUR' unless step 7a gives TotalCurrencyAmount for a foreign-currency open sales item (D4); main_currency_total = the EUR partner-line amount. Then apply the payment_status filter.",
   "10. Partner: map from Included.Companies (step 5) with the shared D9 mapper (active = NOT CustomerActivitySuspended, one 'main' address, is_company = true, account_number = concentration account SearchKey via the step-1 accounts.list). Fallback when it is missing or lacks properties: one cached POST /companies.list {FolderId, Filter:{IsCustomer or IsSupplier:true}}. Optional and N+1: POST /ibans.list {CompanyId} per partner for bank_accounts.",
-  "11. Sort deterministically (Date, DaybookSearchKey, DocumentNo, Id), compute total after all post-filters, slice page/size (CHIFT_INTERNAL), and cache the full result set briefly so later pages do not re-read Horus.",
-  "12. Errors during the fan-out: on 401, refresh the token once (serialised per connection) and retry; on 403, return Chift 400 'folder not accessible with this connection' (D7); on 500, retry with exponential backoff (reads are idempotent). If a call still fails, fail the whole Chift request and never return a partial invoice set.",
+  "11. Sort deterministically (Date, DaybookSearchKey, DocumentNo, Id), compute total after all post-filters, slice page/size (CHIFT_INTERNAL), and cache the full result set briefly so later pages do not re-read Horus (subject to Chift's answer on caching and timeouts); a folder's cache is cleared after any write made through the connector.",
+  "12. Errors during the fan-out: on 401, refresh the token once (serialised per connection) and retry; on 403, return Chift 400 'access denied for the connected Horus user (folder or action)' with the Horus Details (D7); on 500, retry with exponential backoff (reads are idempotent). If a call still fails, fail the whole Chift request and never return a partial invoice set.",
   "13. Later, outside this route: Chift GET /accounting/attachments?type=invoice&document_id={id} → GET /book-entries.info?Id={id} returns Data.Document.Id in one call, with no daybook or month window. Check Data.Folder.Id = folder_id first, otherwise 400 (D13). Document null → no attachment; a 404 most likely means the Id was replaced or deleted (A) → GET /documents.download?Id={DocumentId} → base64.",
-  "14. Later, outside this route: single-invoice read or refresh by Id (for example Chift GET /accounting/invoices/multi-analytic-plans/{invoice_id}, which is not part of this assignment). (a) GET /book-entries.info?Id={id} → header, Folder, Daybook.Id, Date, CompanyDetail and Document; check Data.Folder.Id = folder_id, otherwise 400 (D13). (b) POST /account-histories.list {FolderId, StartMonth/StartYear and EndMonth/EndYear = month of Date (optionally ±1 month, A), Filter:{BookEntryId: id, IncludeReport:false, IncludeCompanyDetail:true, IncludeMatchDetail:true, IncludeVatDetail:true, IncludeCostDetail: WithAnalytics}} → lines, currency, partner ledger account, DueDate, MatchDetail and the partner-line sign that classifies the entry (D1). For a 200/250 daybook, GET /invoices.sales.outstanding.info?BookEntryId={id} gives TransactionType (D1 override), Remark (D3) and TotalCurrencyAmount (D4) for an open item. (c) Partner, when needed: GET /companies.info?Id={CompanyDetail.Company.Id} with the same Folder.Id check (D13), because book-entries.info has no sideloading (or the cached companies.list). (d) Payments, when needed: the step-8b call narrowed with Filter.CompanyId and the partner line's AccountSearchKey. Total: 2 calls (3 for a sales entry), up to 5 with partner and payments, and no scan of every invoice daybook over a guessed period."
+  "14. Later, outside this route: single-invoice read or refresh by Id (for example Chift GET /accounting/invoices/multi-analytic-plans/{invoice_id}, which is not part of this assignment). (a) GET /book-entries.info?Id={id} → header, Folder, Daybook.Id, Date, CompanyDetail and Document; check Data.Folder.Id = folder_id, otherwise 400 (D13). (b) POST /account-histories.list {FolderId, StartMonth/StartYear and EndMonth/EndYear = month of Date (optionally ±1 month, A), Filter:{BookEntryId: id, IncludeReport:false, IncludeCompanyDetail:true, IncludeMatchDetail:true, IncludeVatDetail:true, IncludeCostDetail: WithAnalytics}} → lines, currency, partner ledger account, DueDate, MatchDetail and the partner-line sign (used by D1 only in folders without a credit-note daybook). For a 200/250 daybook, GET /invoices.sales.outstanding.info?BookEntryId={id} gives TransactionType (D1 consistency check), Remark (D3) and TotalCurrencyAmount (D4) for an open item. (c) Partner, when needed: GET /companies.info?Id={CompanyDetail.Company.Id} with the same Folder.Id check (D13), because book-entries.info has no sideloading (or the cached companies.list). (d) Payments, when needed: the step-8b call narrowed with Filter.CompanyId and the partner line's AccountSearchKey. Total: 2 calls (3 for a sales entry), up to 5 with partner and payments, and no scan of every invoice daybook over a guessed period."
  ],
  "field_mappings": [
   {
@@ -230,11 +230,11 @@
    "chift_field": "path:invoice_type",
    "kind": "path_param",
    "chift_required": true,
-   "horus_source": "POST /daybooks.list → Data[].Type (cached full list: both sibling types); POST /account-histories.list → partner-line (AccountType 100/200) Debit/Credit; POST /invoices.sales.outstanding.list → TransactionType (sales, open items)",
+   "horus_source": "POST /daybooks.list → Data[].Type (cached full list: both sibling types; decides the class, D1); POST /account-histories.list → partner-line (AccountType 100/200) Debit/Credit (only in folders without a credit-note daybook); POST /invoices.sales.outstanding.list → TransactionType (sales, open items; consistency check only)",
    "classification": "COMPOSITE",
-   "rule": "Mandatory classification (D1). (1) Daybook selection: customer_invoice and customer_refund read the daybooks of Types 200 AND 250; supplier_invoice and supplier_refund read Types 100 AND 150, because the write route can post a credit note into a 200/100 daybook when no 250/150 daybook exists. (2) Classification per entry by the net partner-line sign: customer side, net debit = invoice and net credit = credit note; supplier side, net credit = invoice and net debit = credit note. (3) Sales: for open items, TransactionType ('0: Sale invoice' / '1: Sale credit note') overrides the sign. (4) No partner line or a zero net → the daybook Type decides (200/100 = invoice, 250/150 = credit note). (5) Return only the entries whose class equals invoice_type. Label A: the sign rule is general accounting knowledge, and the docs neither tie Type 0/1 to a daybook type nor expose the document Type on book-entries.list or account-histories.list. Call count: one book-entries.list per daybook of the two sibling types.",
+   "rule": "D1 classification (A, pending H2). (1) Daybook selection: customer_invoice and customer_refund read the daybooks of Types 200 AND 250; supplier_invoice and supplier_refund read Types 100 AND 150. (2) Proposed rule, daybook first: an entry in a 250/150 daybook is a credit note; an entry in a 200/100 daybook is an invoice. (3) Only in a folder that has no 250 (sales) or no 150 (purchases) daybook, where the create route posts refunds into 200/100 (D1 fallback), entries of the 200/100 daybook are classified by the net partner-line sign: customer side, net credit = credit note; supplier side, net debit = credit note; no partner line or a zero net = invoice. (4) Sales: TransactionType ('0: Sale invoice' / '1: Sale credit note') from the open-sales list is compared with the result and mismatches are logged; it never reclassifies, so an entry keeps its class when it is paid. (5) Return only the entries whose class equals invoice_type. Alternative rule (sign first, all folders): every credit-direction invoice is returned as a refund, although Chift's due-date sign convention allows a negative invoice ('A negative amount represents credit on customer invoices and supplier refunds'). Chift chooses (C5) once Horus answers H2. Known failure of the proposed rule: a credit note keyed into a 200/100 daybook of a folder that has a 250/150 daybook is returned as an invoice with negative amounts. Label A: the docs neither tie Type 0/1 to a daybook type nor expose the document Type on book-entries.list or account-histories.list. Call count: one book-entries.list per daybook of the two sibling types (under the proposed rule the 250/150 daybooks add nothing to an invoice request, nor the 200/100 daybooks to a refund request in a folder that has a credit-note daybook; both types are kept while C5 is open).",
    "label": "A",
-   "evidence": "POST /daybooks.list → Types: '`100`: Purchase - `150`: PurchaseCreditNote - `200`: Sale - `250`: SaleCreditNote'; Guide: Posting sales & purchase invoices: 'daybooks.list , types 200 / 250 for sales and 100 / 150 for purchases' and 'Type is 0 for an invoice and 1 for a credit note.'; POST /invoices.sales.outstanding.list → TransactionType: '`0`: Sale invoice - `1`: Sale credit note - `2`: Payment - `3`: Miscellaneous operation'"
+   "evidence": "POST /daybooks.list → Types: '`100`: Purchase - `150`: PurchaseCreditNote - `200`: Sale - `250`: SaleCreditNote'; Guide: Posting sales & purchase invoices: 'daybooks.list , types 200 / 250 for sales and 100 / 150 for purchases' and 'Type is 0 for an invoice and 1 for a credit note.'; POST /invoices.sales.outstanding.list → TransactionType: '`0`: Sale invoice - `1`: Sale credit note - `2`: Payment - `3`: Miscellaneous operation'; Chift InvoiceItemDueDatesOut.amount: 'A negative amount represents credit on customer invoices and supplier refunds or debit on supplier invoices and customer refunds.'"
   },
   {
    "chift_field": "query:page",
@@ -242,7 +242,7 @@
    "chift_required": false,
    "horus_source": "none (no pagination in any Horus list endpoint)",
    "classification": "CHIFT_INTERNAL",
-   "rule": "Fetch the full filtered set for the period, sort deterministically (Date, DaybookSearchKey, DocumentNo, Id) and return items[(page-1)*size : page*size]. Cache the set per request signature so each page does not trigger a full Horus re-read.",
+   "rule": "Fetch the full filtered set for the period, sort deterministically (Date, DaybookSearchKey, DocumentNo, Id) and return items[(page-1)*size : page*size]. Cache the set per request signature so each page does not trigger a full Horus re-read; whether Chift allows such a cache between page calls is the Chift question on caching and timeouts. A folder's cache is cleared after any write made through the connector.",
    "label": "D",
    "evidence": "none: no page/limit/offset/skip parameter or total count field exists in horus_reference.txt, the guides or the raw export (grep)"
   },
@@ -262,9 +262,9 @@
    "chift_required": false,
    "horus_source": "FolderId (body or query of every endpoint used); POST /folders.list {Mode: 0} only under the D7 fallback",
    "classification": "DIRECT",
-   "rule": "D7: folder_id is required whenever the connection has more than one selected folder. If it is absent and exactly one folder was selected at activation, use it. If no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}. Otherwise return 400 'folder_id required'. A Horus 403 → Chift 400 'folder not accessible with this connection'. Chift folder_id = Horus Folder Id (GUID). Terminology trap: a Horus 'company' is a third party, not the legal entity.",
+   "rule": "D7: folder_id is required whenever the connection has more than one selected folder. If it is absent and exactly one folder was selected at activation, use it. If no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}. Otherwise return 400 'folder_id required'. A folder_id outside the activation selection is rejected with 400 'folder not selected for this connection' before any Horus call (D7, Chift FolderItem.selected). A Horus 403 → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details. Chift folder_id = Horus Folder Id (GUID). Terminology trap: a Horus 'company' is a third party, not the legal entity.",
    "label": "D",
-   "evidence": "Guide: Data model: 'A folder is the accounting record of one company... Almost every endpoint requires a FolderId .'; POST /folders.list → Mode *: '`0`: All folders'; RESPONSE 403: 'Forbidden – the user/integrator is not allowed to access this resource.'"
+   "evidence": "Guide: Data model: 'A folder is the accounting record of one company... Almost every endpoint requires a FolderId .'; POST /folders.list → Mode *: '`0`: All folders'; RESPONSE 403: 'Forbidden – the user/integrator is not allowed to access this resource.'; Chift FolderItem.selected: 'Only selected folders can be used in subsequent requests. Requests targeting a folder that was not selected will be rejected.'"
   },
   {
    "chift_field": "query:date_from",
@@ -272,7 +272,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.list, /account-histories.list, /cost-histories.list → StartMonth, StartYear",
    "classification": "TRANSFORM",
-   "rule": "StartMonth = month(date_from), StartYear = year(date_from), optionally minus 1 month as a safety margin. Then post-filter book entry Date >= date_from at day level. When absent, use the start of the earliest fiscal year (fiscal-years.list with IncludeFuture=true) or a Chift default window, because Horus requires the period.",
+   "rule": "StartMonth = month(date_from), StartYear = year(date_from), optionally minus 1 month as a safety margin. Then post-filter book entry Date >= date_from at day level. When absent, use the start of the current fiscal year (proposal, C11; fiscal-years.list), because Horus requires the period and a bounded window limits volume.",
    "label": "A",
    "evidence": "POST /book-entries.list → 'StartMonth *: number [example=1]'; Guide: Reading accounting data: 'Periods are expressed by month and year ( StartMonth , StartYear , EndMonth , EndYear ).'"
   },
@@ -282,7 +282,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.list, /account-histories.list, /cost-histories.list → EndMonth, EndYear",
    "classification": "TRANSFORM",
-   "rule": "EndMonth/EndYear = month and year of date_to, optionally plus 1 month. Post-filter Date <= date_to. To validate: whether Horus filters on AccountingMonth/AccountingYear or on Date, and whether one call may span several fiscal years.",
+   "rule": "EndMonth/EndYear = month and year of date_to, optionally plus 1 month. Post-filter Date <= date_to. To validate: whether Horus filters on AccountingMonth/AccountingYear or on Date, and whether one call may span several fiscal years. When absent, use the end of the latest fiscal year (fiscal-years.list with IncludeFuture=true), so entries already posted in a future fiscal year are covered.",
    "label": "A",
    "evidence": "POST /account-histories.list → 'EndMonth *: number [example=12]', 'EndYear *: number [example=2018]'; response has both 'AccountingMonth' and 'Date'"
   },
@@ -292,7 +292,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.list → DaybookId (one per call); POST /account-histories.list & /cost-histories.list → Filter.DaybookIds",
    "classification": "TRANSFORM",
-   "rule": "Split on ','. Each value is a Horus Daybook.Id (as exposed by the connector's Get journals). Keep only daybooks whose Type belongs to the sibling pair of invoice_type (200/250 for customer_*, 100/150 for supplier_*; D1), checked against the cached daybooks.list: a customer_refund request may legitimately name a 200 daybook, because credit notes can sit there. Ids outside the pair, or absent from the folder's cached daybooks.list (so a daybook of another folder can never be read, consistent with D13), are ignored, and the result is empty if none remain. book-entries.list needs one call per daybook; account-histories.list takes the whole array in one call. The D1 sign classification still applies inside the named daybooks.",
+   "rule": "Split on ','. Each value is a Horus Daybook.Id (as exposed by the connector's Get journals). Keep only daybooks whose Type belongs to the sibling pair of invoice_type (200/250 for customer_*, 100/150 for supplier_*; D1), checked against the cached daybooks.list: a customer_refund request may legitimately name a 200 daybook, because credit notes can sit there. An id absent from the folder's cached daybooks.list triggers one refresh of the daybook cache (refresh on miss, as for analytics); if it is still unknown, return 400 'journal not found in this folder' (this also covers a daybook of another folder, D13). An id of the folder outside the sibling pair follows Chift's convention for filters the target cannot honour (400 naming the id, or ignored with an empty page if none remain). The result is never narrowed silently. book-entries.list needs one call per daybook; account-histories.list takes the whole array in one call. The D1 classification still applies inside the named daybooks.",
    "label": "D",
    "evidence": "POST /book-entries.list → 'DaybookId *: string'; POST /account-histories.list → 'DaybookIds: array[string] // Filters on daybooks specified by their id.'"
   },
@@ -302,7 +302,7 @@
    "chift_required": false,
    "horus_source": "POST /account-histories.list (call 2: Filter.AccountSearchKeys = partner ledger accounts, no daybook filter) → MatchDetail.MatchNo / MatchStatus; optional POST /invoices.sales.outstanding.list → LinkedElements[]",
    "classification": "COMPOSITE",
-   "rule": "false → payments = null and no extra calls. true → a second account-histories.list on the partner ledger accounts across all daybooks, from the invoice window start to the current month, joined on (Company.Id, AccountType, MatchNo). A daybook whitelist is avoided because offsets can sit in any daybook type. For open sales invoices, the LinkedElements of invoices.sales.outstanding.list (already loaded for the D1 classification of sales types, whole folder, no date filter) can be used as well.",
+   "rule": "false → payments = null and no extra calls. true → a second account-histories.list on the partner ledger accounts across all daybooks, from the invoice window start to the current month, joined on (Company.Id, AccountType, MatchNo). A daybook whitelist is avoided because offsets can sit in any daybook type. For open sales invoices, the LinkedElements of invoices.sales.outstanding.list (already loaded for sales types, whole folder, no date filter) can be used as well. The payment call reads whole collective accounts (all partners, all daybooks, window start to today); see call-sequence step 8 for mitigations (H5).",
    "label": "D",
    "evidence": "Guide: Outstanding items & matching: 'Matching links entry lines that offset each other, typically an invoice and its payment(s), by giving them the same matching number ( MatchNo ).'; POST /account-histories.list → Filter.AccountSearchKeys: 'matching the *starts with* clause'"
   },
@@ -320,11 +320,11 @@
    "chift_field": "query:updated_after",
    "kind": "query_param",
    "chift_required": false,
-   "horus_source": "POST /book-entries.list → Filter.ModifiedAfter (also on /account-histories.list)",
+   "horus_source": "POST /book-entries.list → Filter.ModifiedAfter; POST /account-histories.list → Filter.ModifiedAfter",
    "classification": "TRANSFORM",
-   "rule": "Convert the naive UTC datetime to ISO 8601 with '+00:00' and pass it as ModifiedAfter on book-entries.list. The month window is still mandatory, so widen it to all relevant fiscal years. Load lines without ModifiedAfter, restricted to the changed entry Ids, so invoices are complete. Caveats: an update creates a new Id; deletions are invisible; the book-entries.list description says 'account-histories'; it is unknown whether matching updates LastModifiedDate.",
-   "label": "D",
-   "evidence": "POST /book-entries.list → ModifiedAfter: '*NULL* by default. Include only account-histories modified after a given date.'; Guide: Making requests: 'Dates are exchanged as ISO 8601 strings with a time zone offset'; Guide: Reading accounting data: 'When an invoice or an operation is updated, a new book entry is generated.'"
+   "rule": "Convert the naive UTC datetime to ISO 8601 with '+00:00', subtract a small overlap (proposal: 5 minutes, A) and pass it as Filter.ModifiedAfter on every book-entries.list call (step 5) and on the step-6 account-histories.list call. The month window is still mandatory: when no dates are given, use the look-back agreed with Chift (C11; proposal: from the start of the current fiscal year) rather than every fiscal year. An invoice is 'updated' when its header or any of its lines changed, the same definition as last_updated_on: take the union of the BookEntry Ids from steps 5 and 6, then complete only the incomplete entries: one account-histories.list Filter.BookEntryId call per changed entry whose lines do not add up to its TurnoverAmount, and GET /book-entries.info (folder-checked, D13) for changed lines whose header did not come back (A, pending H10). Consumers must dedupe re-delivered invoices by id. An incremental call cannot detect replaced ids (an update creates a new Id; the old one never comes back) or deletions and, until H10 is answered, may miss payment-status changes if matching does not update LastModifiedDate; the boundary semantics (strict or inclusive), LastModifiedDate precision and the clock used are also undocumented (H10). A periodic full re-sync is proposed (cadence to agree with Chift). The book-entries.list description of ModifiedAfter says 'account-histories' (documentation copy-paste).",
+   "label": "A",
+   "evidence": "POST /book-entries.list → ModifiedAfter: '*NULL* by default. Include only account-histories modified after a given date.'; Guide: Making requests: 'Dates are exchanged as ISO 8601 strings with a time zone offset'; Guide: Reading accounting data: 'When an invoice or an operation is updated, a new book entry is generated.'; POST /account-histories.list → Filter.ModifiedAfter: '*NULL* by default. Include only account-histories modified after a given date.'"
   },
   {
    "chift_field": "query:include_invoice_lines",
@@ -352,7 +352,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.list → Verified / VerifiedBy",
    "classification": "TRANSFORM",
-   "rule": "Horus has no approval workflow. The closest field is Verified, which only means something when an extra verification step is configured. approved → keep Verified=true; pending → Verified=false (only if verification is configured, otherwise pending is meaningless); rejected → empty result. Alternative: reject the filter as unsupported. Chift must decide.",
+   "rule": "Horus has no approval workflow; Verified means something only when an extra verification step is configured, and the API cannot tell whether it is. Proposed default: approval is not supported; every item returns 'unknown', and an approval_status filter is answered per Chift's convention for filters the target cannot honour (400, or an empty page). If Chift accepts Verified as 'approved': the field is 'approved' when Verified=true, otherwise 'unknown'; the filter maps approved → Verified=true, and pending or rejected → empty page. Verified=false is never mapped to 'pending'.",
    "label": "A",
    "evidence": "POST /book-entries.list → Verified: 'False by default. Can only ever be set to 'True' if an additionnal verification step has been configured in Horus.'"
   },
@@ -362,7 +362,7 @@
    "chift_required": true,
    "horus_source": "POST /book-entries.list → Data[] joined with POST /account-histories.list → Data[] grouped by BookEntry.Id",
    "classification": "COMPOSITE",
-   "rule": "One Chift invoice per Horus book entry found in the daybooks of both sibling types (D1) whose mandatory sign/TransactionType classification matches invoice_type (optionally EntryType '`100`: Normal' only, assumption), enriched with its account-history lines. Never use per-entry calls: GET /book-entries.info returns the same fields as a book-entries.list item and no lines, so per-entry enrichment would be N+1 with no gain.",
+   "rule": "One Chift invoice per Horus book entry found in the daybooks of both sibling types (D1) whose D1 classification (daybook type, with the sign heuristic in folders without a credit-note daybook; A pending H2) matches invoice_type (optionally EntryType '`100`: Normal' only, assumption), enriched with its account-history lines. Never use per-entry calls: GET /book-entries.info returns the same fields as a book-entries.list item and no lines, so per-entry enrichment would be N+1 with no gain.",
    "label": "A",
    "evidence": "Guide: Posting sales & purchase invoices: 'Sales and purchase invoices pushed through the API are converted into book entries in the corresponding daybook.'; GET /book-entries.info: 'Get details for a specific book entry.' (its Data has the same fields as POST /book-entries.list → Data[])"
   },
@@ -390,9 +390,9 @@
    "chift_field": "response.items[].invoice_type",
    "kind": "response_field",
    "chift_required": true,
-   "horus_source": "D1 classification: POST /daybooks.list → Type pair + POST /account-histories.list partner-line sign + POST /invoices.sales.outstanding.list → TransactionType (sales, open items)",
+   "horus_source": "D1 classification: POST /daybooks.list → Type (decides); POST /account-histories.list partner-line sign (only in folders without a credit-note daybook); POST /invoices.sales.outstanding.list → TransactionType (sales, open items; consistency check only)",
    "classification": "CONSTANT",
-   "rule": "Equals the path invoice_type, because entries whose D1 classification gives the sibling type are excluded here and returned by the sibling invoice_type call instead (for example a credit note found in a 200 daybook is returned under customer_refund, not customer_invoice). Label A because membership rests on the D1 sign rule.",
+   "rule": "Equals the path invoice_type, because entries whose D1 classification gives the sibling type are excluded here and returned by the sibling invoice_type call instead (for example, in a folder without a 250 daybook, a credit note found in the 200 daybook is returned under customer_refund). Label A because membership rests on the D1 heuristic (H2).",
    "label": "A",
    "evidence": "POST /daybooks.list → Type enum (100/150/200/250); POST /invoices.sales.outstanding.list → TransactionType: '`0`: Sale invoice - `1`: Sale credit note'"
   },
@@ -422,7 +422,7 @@
    "chift_required": true,
    "horus_source": "POST /book-entries.list → CompanyDetail.TurnoverAmount (fallback: sum of the entry's non-partner, non-VAT lines); D4 scaling: POST /invoices.sales.outstanding.list → TotalCurrencyAmount, TotalAmount",
    "classification": "TRANSFORM",
-   "rule": "Take abs(TurnoverAmount), normalised so the invoice's natural direction is positive (Chift convention; direction from the D1 classification). Fallback when CompanyDetail is null: sum of the Chift lines. Assumption: TurnoverAmount is the amount excluding VAT, in folder currency EUR (D4). When the item is returned in invoice currency (currency row, case a), scale every amount by the ratio TotalCurrencyAmount ÷ TotalAmount of the open-sales row and put the rounding residual on the largest line so lines, untaxed, tax and total still add up (A); otherwise return the EUR amount.",
+   "rule": "Take the magnitude of TurnoverAmount, positive when the partner line runs in the natural direction of the entry's D1 class (Chift convention) and negative otherwise (a credit-direction invoice kept under customer_invoice / supplier_invoice by D1). Fallback when CompanyDetail is null: sum of the Chift lines. Assumption: TurnoverAmount is the amount excluding VAT, in folder currency EUR (D4). When the item is returned in invoice currency (currency row, case a), scale every amount by the ratio TotalCurrencyAmount ÷ TotalAmount of the open-sales row and put the rounding residual on the largest line so lines, untaxed, tax and total still add up (A); otherwise return the EUR amount.",
    "label": "A",
    "evidence": "POST /book-entries.list → CompanyDetail.TurnoverAmount: number|null (no description)"
   },
@@ -432,7 +432,7 @@
    "chift_required": true,
    "horus_source": "POST /book-entries.list → CompanyDetail.TaxAmount (fallback: sum of AccountType 400 lines)",
    "classification": "TRANSFORM",
-   "rule": "Take abs and normalise the sign. Fallback: sum of the VAT lines (AccountType '`400`: VAT'). Folder-currency EUR (D4, A); scaled to invoice currency only in the open-sales case described under untaxed_amount.",
+   "rule": "Same sign rule as untaxed_amount. Fallback: sum of the VAT lines (AccountType '`400`: VAT'). Folder-currency EUR (D4, A); scaled to invoice currency only in the open-sales case described under untaxed_amount.",
    "label": "A",
    "evidence": "POST /book-entries.list → CompanyDetail.TaxAmount: number|null; POST /account-histories.list → AccountType '`400`: VAT'"
   },
@@ -442,7 +442,7 @@
    "chift_required": true,
    "horus_source": "POST /book-entries.list → CompanyDetail.TotalAmount (fallback: sum of partner lines Debit/Credit); open foreign-currency sales items: POST /invoices.sales.outstanding.list → TotalCurrencyAmount",
    "classification": "TRANSFORM",
-   "rule": "Take abs and normalise the sign; check total = untaxed + tax. D4: CompanyDetail and Debit/Credit amounts are assumed to be folder-currency EUR (A). For a foreign-currency open sales item, total = abs(TotalCurrencyAmount) with currency = Currency; for every other foreign-currency document, total stays in EUR and currency = 'EUR'. Open question: direction and meaning of CurrencyRate; currency of CompanyDetail amounts.",
+   "rule": "Same sign rule as untaxed_amount; check total = untaxed + tax. D4: CompanyDetail and Debit/Credit amounts are assumed to be folder-currency EUR (A). For a foreign-currency open sales item, total = TotalCurrencyAmount (same sign rule) with currency = Currency; for every other foreign-currency document, total stays in EUR and currency = 'EUR'. Open question: direction and meaning of CurrencyRate; currency of CompanyDetail amounts.",
    "label": "A",
    "evidence": "POST /book-entries.list → CompanyDetail.TotalAmount: number|null; POST /invoices.sales.outstanding.list has both 'TotalAmount' and 'TotalCurrencyAmount'"
   },
@@ -692,7 +692,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.list → LastModifiedDate (+ account-histories.list → LastModifiedDate)",
    "classification": "TRANSFORM",
-   "rule": "Design choice: the later of the entry's and its lines' LastModifiedDate, converted from the offset-qualified ISO string to UTC.",
+   "rule": "Design choice: the later of the entry's and its lines' LastModifiedDate, converted from the offset-qualified ISO string to UTC (the same definition the updated_after filter uses).",
    "label": "D",
    "evidence": "POST /book-entries.list → LastModifiedDate: 'Date at which the record was last modified in the database.'; Guide: Making requests: 'Dates are exchanged as ISO 8601 strings with a time zone offset'"
   },
@@ -802,7 +802,7 @@
    "chift_required": false,
    "horus_source": "POST /account-histories.list → partner lines (AccountType 100/200) DueDate, Debit/Credit; fallback POST /book-entries.list → CompanyDetail.DueDate, TotalAmount",
    "classification": "COMPOSITE",
-   "rule": "One element per partner line of the entry: {due_date: line DueDate (null → invoice_date), amount: line Debit/Credit signed per the Chift convention (positive = debit on customer invoices and supplier refunds, or credit on supplier invoices and customer refunds; invoice vs refund from the D1 classification), payment_method: null, payment_method_id: null}. Amounts are EUR (D4), scaled by the same TotalCurrencyAmount ÷ TotalAmount ratio only when the invoice is returned in its own currency. With a single partner line or none, use CompanyDetail.DueDate/TotalAmount. API-posted invoices have one DueDate; whether entries keyed in Horus Office can have several partner lines is unconfirmed. PaymentMode is write-only.",
+   "rule": "One element per partner line of the entry: {due_date: line DueDate (null → invoice_date), amount: line Debit/Credit signed per the Chift convention (positive = debit on customer invoices and supplier refunds, or credit on supplier invoices and customer refunds; invoice vs refund from the D1 classification), payment_method: null, payment_method_id: null}. Amounts are EUR (D4), scaled by the same TotalCurrencyAmount ÷ TotalAmount ratio only when the invoice is returned in its own currency. With a single partner line or none, use CompanyDetail.DueDate/TotalAmount. API-posted invoices have one DueDate; whether entries keyed in Horus Office can have several partner lines is unconfirmed (H8). PaymentMode is write-only.",
    "label": "A",
    "evidence": "POST /account-histories.list → 'DueDate: string|null' on each line; POST /book-entries.list → CompanyDetail.DueDate: string|null; POST /invoices.purchases.new → PaymentMode (input only)"
   },
@@ -842,7 +842,7 @@
    "chift_required": false,
    "horus_source": "POST /account-histories.list → Debit/Credit of the partner lines (AccountType 100/200); cross-check POST /book-entries.list → CompanyDetail.TotalAmount",
    "classification": "TRANSFORM",
-   "rule": "D4: the EUR partner-line amount, sign-normalised (customer: Σ(Debit − Credit), supplier: Σ(Credit − Debit), then abs for refunds per the Chift convention). Account-history Debit/Credit are assumed to be in folder currency EUR (A). For EUR invoices it equals total; for a foreign-currency document it differs from total only when total is returned in invoice currency.",
+   "rule": "D4: the EUR partner-line amount, sign-normalised (customer: Σ(Debit − Credit), supplier: Σ(Credit − Debit), then negated for refunds, so the natural direction of the D1 class is positive, per the Chift convention). Account-history Debit/Credit are assumed to be in folder currency EUR (A). For EUR invoices it equals total; for a foreign-currency document it differs from total only when total is returned in invoice currency.",
    "label": "A",
    "evidence": "Chift contract → main_currency_total: 'Total amount of the invoice in the accounting folder's currency.'; POST /invoices.sales.outstanding.list → 'TotalAmount' vs 'TotalCurrencyAmount' (suggests account amounts are in folder currency); POST /account-histories.list → 'Debit: number|null', 'Credit: number|null'"
   },
@@ -872,7 +872,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.list → Verified",
    "classification": "CONSTANT",
-   "rule": "'unknown' by default. If Chift accepts it: Verified=true → 'approved'. Horus has no 'rejected' or 'pending' state.",
+   "rule": "'unknown' by default. Only if Chift accepts Verified as approval: Verified=true → 'approved', otherwise 'unknown'. Never 'pending' or 'rejected' (no Horus state); the filter uses the same rule.",
    "label": "A",
    "evidence": "POST /book-entries.list → Verified: 'False by default. Can only ever be set to 'True' if an additionnal verification step has been configured in Horus.'"
   },
@@ -922,7 +922,7 @@
    "chift_required": true,
    "horus_source": "POST /account-histories.list → Debit / Credit (line)",
    "classification": "TRANSFORM",
-   "rule": "Sales: Credit − Debit. Purchases: Debit − Credit. Refunds (as classified by D1, not by the daybook type): inverted, so the natural direction is positive (Chift convention). Amounts are EUR (D4), scaled to invoice currency only in the open-sales case of the currency row. The debit/credit direction is general accounting knowledge.",
+   "rule": "Sales: Credit − Debit. Purchases: Debit − Credit. Refunds (as classified by D1): inverted, so the natural direction is positive (Chift convention). Amounts are EUR (D4), scaled to invoice currency only in the open-sales case of the currency row. The debit/credit direction is general accounting knowledge.",
    "label": "D",
    "evidence": "POST /account-histories.list → 'Debit: number|null', 'Credit: number|null [example=1445.09]'"
   },
@@ -970,11 +970,11 @@
    "chift_field": "response.items[].lines[].tax_code",
    "kind": "response_field",
    "chift_required": false,
-   "horus_source": "POST /account-histories.list → VatDetail.VatRate, SaleTaxOrigin / PurchaseTaxOrigin, TaxType, TaxCountryCode, TaxCondition, TaxConditionValue → connector VAT catalogue (built from the Horus accepted-combination files, not provided)",
+   "horus_source": "POST /account-histories.list → VatDetail.VatRate, SaleTaxOrigin / PurchaseTaxOrigin, TaxType, TaxCountryCode, TaxCondition, TaxConditionValue → connector VAT catalogue (built from the Horus accepted-combination files per folder Legislation and direction, appendix C); GET /folders.info → Legislation",
    "classification": "COMPOSITE",
-   "rule": "D2 canonical synthetic id, the same grammar as GET vat-codes and create_invoice. Sales: 'S-{TaxRate}-{TaxOrigin}-{TaxType}', plus '-{TaxCountryCode}' only when TaxOrigin = 13 (OSS); example 'S-21-0-0'. Purchases: 'P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}', with 'x' for an unused component; example 'P-21-2-0-0-1-true'. Read rule: build the key from VatDetail (VatRate, SaleTaxOrigin or PurchaseTaxOrigin, TaxType, TaxCountryCode, TaxCondition, TaxConditionValue) and return the catalogue id only if exactly one catalogue entry matches. VatDetail has NO TaxKind, so when several purchase entries match (differing only by TaxKind), or none does (for example read-side TaxCondition '4 = Article', which the write enum lacks), return tax_code = null and keep tax_rate / tax_amount. Never guess, and never return Horus VatCode as the Chift tax_code. Label A: the catalogue depends on the accepted-combination files, which were not provided.",
+   "rule": "D2 canonical synthetic id, the same grammar as GET vat-codes and create_invoice, encoded against the folder's tax-combination list (folders.info Legislation BE or LU, and the invoice direction). Sales: 'S-{TaxRate}-{TaxOrigin}-{TaxType}', plus '-{TaxCountryCode}' on OSS rows (BE TaxOrigin 13; LU 24, 26, 29); example 'S-21-0-0'. Purchases: 'P-{TaxRate}-{TaxOrigin}-{TaxType}-{TaxKind}-{TaxCondition}-{TaxConditionValue}', with 'x' for an unused component; example 'P-21-2-0-0-1-true'. Read rule: build the key from VatDetail (VatRate, SaleTaxOrigin or PurchaseTaxOrigin, TaxType, TaxCountryCode, TaxCondition, TaxConditionValue) rendered canonically (VatRate as a whole number when it has no decimals, TaxConditionValue lowercase as in the write enum) and return the catalogue id only if exactly one entry of the folder's list (Legislation + direction) matches. Where the files give rate and country as 'XX' (OSS rows; LU purchase rows with condition 0 COUNTRY), the id carries the VatRate and country read from VatDetail. VatDetail has NO TaxKind, so when several purchase entries match (differing only by TaxKind), or none does (for example read-side TaxCondition '4 = Article', which the write enum lacks), return tax_code = null and keep tax_rate / tax_amount. Never guess, and never return Horus VatCode as the Chift tax_code (its meaning is undocumented; if Horus confirms it identifies one accepted combination, it could later disambiguate TaxKind). Label A: read-side matching depends on VatDetail and on the catalogue built from the published spreadsheets (H1): VatDetail has no TaxKind, the meaning of VatCode is undocumented, how VatDetail renders VatRate and TaxConditionValue is undocumented, and read-side values such as TaxCondition '4 = Article' are not in the files.",
    "label": "A",
-   "evidence": "POST /account-histories.list → VatDetail: 'VatRate', 'VatCode', 'TaxType: number|null // 0 = National, 1 = European, 2 = International', 'TaxCountryCode: string|null // Used for OSS sales', 'TaxCondition: number|null // *NULL* = ignore, 0 = Country, 1 = Deductibility, 2 = Investments, 3 = Percentage, 4 = Article', 'SaleTaxOrigin', 'PurchaseTaxOrigin' (no TaxKind); POST /invoices.purchases.new → InvoiceLines[].TaxKind: '`0`: MERCH (Merchandises) - `1`: GS (Goods and services) - `2`: INVEST (Investments)'; Guide: Posting sales & purchase invoices: 'Only some combinations are valid. The accepted combinations are listed in these reference files'"
+   "evidence": "POST /account-histories.list → VatDetail: 'VatRate', 'VatCode', 'TaxType: number|null // 0 = National, 1 = European, 2 = International', 'TaxCountryCode: string|null // Used for OSS sales', 'TaxCondition: number|null // *NULL* = ignore, 0 = Country, 1 = Deductibility, 2 = Investments, 3 = Percentage, 4 = Article', 'SaleTaxOrigin', 'PurchaseTaxOrigin' (no TaxKind); POST /invoices.purchases.new → InvoiceLines[].TaxKind: '`0`: MERCH (Merchandises) - `1`: GS (Goods and services) - `2`: INVEST (Investments)'; Guide: Posting sales & purchase invoices: 'Only some combinations are valid. The accepted combinations are listed in these reference files'; GET /folders.info → Legislation: string enum[\"BE\", \"LU\"]; appendix_horus_tax_combinations.md: sales BE 18 rows, LU 58 rows; purchases BE 109 rows, LU 146 rows; OSS rows with rate and country 'XX' (BE origin 13; LU origins 24, 26, 29)"
   },
   {
    "chift_field": "response.items[].lines[].description",
@@ -992,8 +992,8 @@
    "chift_required": false,
    "horus_source": "POST /account-histories.list → CostDetail.CostLines[] (Debit/Credit, Costs[]); alt. POST /cost-histories.list → CostSection1..8 per AccountHistory.Id",
    "classification": "TRANSFORM",
-   "rule": "Requires IncludeCostDetail=true and a folder with costs. Group by CostSchema; within each schema, sum the cost-line amounts per CostSection; percentage = amount / line base × 100, rounded to integers that sum to 100 with the largest-remainder method (the same method as the D8 write-side allocation). Cost lines of Free schemas (CostSectionType 900, from the shared D8 cache) are omitted and a connector warning is logged. [] when there are no cost lines or WithAnalytics=false.",
-   "label": "D",
+   "rule": "Requires IncludeCostDetail=true and a folder with costs. Group by CostSchema; within each schema, sum the cost-line amounts per CostSection; percentage = amount / line base × 100, rounded to integers that sum to 100 with the largest-remainder method (the same method as the D8 write-side allocation). Percentages are computed only when the plan's cost lines sum to the line base; a plan that covers less (a non-mandatory schema left empty on some cost lines) is left out with a connector warning and never rescaled to 100% (proposal; H13). Cost lines of Free schemas (CostSectionType 900, from the shared D8 cache) are omitted and a connector warning is logged. [] when there are no cost lines or WithAnalytics=false.",
+   "label": "A",
    "evidence": "POST /account-histories.list → CostDetail: 'Only when 'IncludeCostDetail' is set to true, and folder is with costs.'; Guide: Data model: 'cost histories are the analytical distribution of account history lines'"
   },
   {
@@ -1022,7 +1022,7 @@
    "chift_required": true,
    "horus_source": "CostDetail.CostLines[].Debit / Credit vs line Debit / Credit",
    "classification": "TRANSFORM",
-   "rule": "Horus stores amounts, so convert them to whole-number percentages (Chift: 'Only whole numbers... must equal 100%'). Use largest-remainder rounding, the cross-route convention of D8; a 33.33 / 33.33 / 33.34 split becomes 33 / 33 / 34, so precision is lost.",
+   "rule": "Horus stores amounts, so convert them to whole-number percentages (Chift: 'Only whole numbers... must equal 100%'). Use largest-remainder rounding, the cross-route convention of D8; a 33.33 / 33.33 / 33.34 split becomes 33 / 33 / 34. On small lines the split can differ from the one sent: 0.10 sent as 33/33/34 is booked 0.03/0.03/0.04 and reads back as 30/30/40. Ties go to plan order, then account id.",
    "label": "D",
    "evidence": "POST /account-histories.list → CostLines[]: 'Debit: number|null', 'Credit: number|null [example=1445.09]'; POST /invoices.purchases.new → CostLines[].Amount: 'The sum of all cost lines' amounts must be equal to the corresponding invoice line's base amount.'"
   }
@@ -1030,7 +1030,7 @@
  "horus_required_without_chift_source": [
   {
    "horus_field": "FolderId (every Horus call except ibans.list and the Id-only GET reads such as book-entries.info, companies.info and documents.download)",
-   "how_to_fill": "D7: from folder_id; required when the connection has more than one selected folder. If absent: the single folder selected at activation; if no selection is stored, the single folder returned by POST /folders.list {Mode:0}; otherwise 400 'folder_id required'. Horus 403 → Chift 400 'folder not accessible with this connection'.",
+   "how_to_fill": "D7: from folder_id; required when the connection has more than one selected folder. If absent: the single folder selected at activation; if no selection is stored, the single folder returned by POST /folders.list {Mode:0}; otherwise 400 'folder_id required'. A folder_id outside the activation selection → 400 'folder not selected for this connection' before any Horus call. Horus 403 → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details.",
    "label": "D"
   },
   {
@@ -1050,7 +1050,7 @@
   },
   {
    "horus_field": "StartMonth *, StartYear *, EndMonth *, EndYear * (book-entries.list, account-histories.list, cost-histories.list)",
-   "how_to_fill": "From date_from/date_to (month and year, optionally widened by one month). When absent: fiscal-years.list bounds (with IncludeFuture=true) or a Chift-defined default window. For the payment search: from the invoice window start to the current month. For a single-invoice read: the month of the GET /book-entries.info Date, optionally widened by one month.",
+   "how_to_fill": "From date_from/date_to (month and year, optionally widened by one month). When absent: the default window agreed with Chift (C11; proposal: from the start of the current fiscal year to the latest EndDate, fiscal-years.list with IncludeFuture=true). For the payment search: from the invoice window start to the current month. For a single-invoice read: the month of the GET /book-entries.info Date, optionally widened by one month.",
    "label": "A"
   },
   {
@@ -1120,19 +1120,24 @@
   },
   {
    "horus_field": "POST /invoices.sales.outstanding.list → Filter.ConfirmedOnly (default FALSE)",
-   "how_to_fill": "Leave it false, so unconfirmed (draft) open sales items also get their TransactionType for the D1 classification.",
+   "how_to_fill": "Leave it false, so unconfirmed (draft) open sales items also get their TransactionType for the D1 consistency check (and their Remark and currency totals for D3 and D4).",
    "label": "D"
   }
  ],
  "limitations": [
   {
-   "description": "Horus has no endpoint that lists or reads sales/purchase invoices. The only invoice read endpoints return open sales items (invoices.sales.outstanding.list/info). GET /book-entries.info reads one book entry by Id, but only its header: the same fields as a book-entries.list item, with lines as {Type, Id} references and no sideloading.",
+   "description": "Horus has no general endpoint that lists or reads sales/purchase invoices. The only invoice read endpoints return open sales items (invoices.sales.outstanding.list/info). GET /book-entries.info reads one book entry by Id, but only its header: the same fields as a book-entries.list item, with lines as {Type, Id} references and no sideloading.",
    "impact": "The invoice is rebuilt from book entries and account-history lines, which means more connector logic and more calls than a native invoice read. book-entries.info only makes single-invoice reads and attachment lookups cheaper; it does not shorten the list path.",
    "label": "F"
   },
   {
-   "description": "Horus list endpoints have no pagination and no total count.",
-   "impact": "Every Chift page re-reads the whole period from Horus unless the connector caches the result. Large folders over long periods give heavy payloads (gzip recommended) and possible timeouts.",
+   "description": "No Horus list documents paging parameters or a total count, so lists are expected to return the full result (deduction; size limits unverified, H5).",
+   "impact": "Every Chift page re-reads the whole period from Horus unless the connector caches the result between page calls (subject to the Chift question on caching and timeouts). Large folders over long periods give heavy payloads (gzip recommended) and possible timeouts: expected to work for typical folder sizes; behaviour on large folders is unverified (H5).",
+   "label": "D"
+  },
+  {
+   "description": "Incremental calls and the payment lookup still read large volumes: ModifiedAfter narrows results only inside a mandatory month window, and the payment lookup reads whole collective accounts (Filter.CompanyId takes a single id).",
+   "impact": "An hourly updated_after sync on a folder with years of entries, or a request with include_payments=true, can return large payloads; Horus documents no size or rate limits (H5). Deletions, replaced ids and possibly payment changes are not seen by incremental sync, so a periodic full re-sync is needed.",
    "label": "D"
   },
   {
@@ -1147,7 +1152,7 @@
   },
   {
    "description": "Updating an invoice (invoices.*.update, book-entries.*.update) generates a new book entry with a new Id, and the original attachment is deleted.",
-   "impact": "An updated_after sync shows the updated invoice as a new item while the old Id silently disappears; consumers must reconcile on journal_id + invoice_number.",
+   "impact": "An updated_after sync shows the updated invoice as a new item while the old Id silently disappears; consumers must reconcile on journal_id + invoice_number, which works only for entries that have a number (C7).",
    "label": "F"
   },
   {
@@ -1162,7 +1167,7 @@
   },
   {
    "description": "Book entries and account-history lines carry no invoice/credit-note flag, and the docs do not tie the write-side Type (0/1) to a daybook type. The only documented read-side discriminator is TransactionType on invoices.sales.outstanding.list (open sales items only).",
-   "impact": "D1 makes the classification mandatory: both sibling daybook types are always scanned and each entry is classified by the partner-line sign (TransactionType overrides it for open sales items). The rule is labelled A until Horus confirms it or exposes the document Type on read, and it doubles the book-entries.list calls when credit-note daybooks exist.",
+   "impact": "D1 scans both sibling daybook types and classifies each entry by its daybook type; the partner-line sign decides only in folders without a credit-note daybook, and TransactionType on open sales items is a consistency check, so a class does not change once the item is paid. The rule is a heuristic (A) until Horus answers H2: a credit note keyed into a 200/100 daybook of a folder that has a credit-note daybook comes back as an invoice with negative amounts (Chift decision C5). Scanning both types doubles the book-entries.list calls when credit-note daybooks exist.",
    "label": "A"
   },
   {
@@ -1176,13 +1181,13 @@
    "label": "F"
   },
   {
-   "description": "The per-line tax amount is not stored on base lines (VAT is booked on separate VAT account lines), which line types carry VatDetail is undocumented, there is no VAT-code endpoint, the accepted-combination files were not provided, and VatDetail has no TaxKind.",
-   "impact": "lines[].tax_amount must be allocated or computed, and tax_rate may have to be read from the VAT line. tax_code uses the canonical synthetic grammar (D2) and is null whenever the VatDetail components match zero or several catalogue entries (several purchase codes differing only by TaxKind, or TaxCondition '4 = Article').",
+   "description": "The per-line tax amount is not stored on base lines (VAT is booked on separate VAT account lines), which line types carry VatDetail is undocumented, there is no VAT-code endpoint, and VatDetail has no TaxKind.",
+   "impact": "lines[].tax_amount must be allocated or computed, and tax_rate may have to be read from the VAT line. tax_code uses the canonical synthetic grammar (D2), encoded against the folder's tax-combination list (legislation and direction), and is null whenever the VatDetail components match zero or several entries (several purchase codes differing only by TaxKind, or TaxCondition '4 = Article').",
    "label": "?"
   },
   {
    "description": "Analytics are stored as amounts per cost line (up to 8 schemas), while Chift expects whole-number percentages per plan.",
-   "impact": "Rounding loss: percentages are approximations of the stored amounts.",
+   "impact": "Rounding loss: percentages are approximations of the stored amounts, and on small lines the read-back can differ from the split sent (0.10 sent as 33/33/34 reads back as 30/30/40). A plan that covers only part of a line is left out with a warning rather than rescaled to 100% (proposal; H13).",
    "label": "D"
   },
   {
@@ -1197,7 +1202,7 @@
   },
   {
    "description": "The Horus status model is Confirmed / unconfirmed plus matching. There is no cancelled state and no approval workflow; only an optional Verified flag exists.",
-   "impact": "status is limited to draft/posted/paid. approval_status is mostly 'unknown', and the approval_status filter can only be emulated or rejected.",
+   "impact": "status is limited to draft/posted/paid. approval_status is 'unknown' by default, and the approval_status filter follows Chift's convention for filters the target cannot honour, unless Chift accepts Verified as approval.",
    "label": "D"
   },
   {
@@ -1212,7 +1217,7 @@
   },
   {
    "description": "It is unknown whether matching a payment updates the LastModifiedDate of the invoice entry or of its partner line. The ModifiedAfter description on book-entries.list mentions 'account-histories'.",
-   "impact": "An updated_after sync may miss payment-status changes; the connector may need a separate open-items refresh.",
+   "impact": "An updated_after sync may miss payment-status changes (H10); the connector may need a separate open-items refresh, and a periodic full re-sync is proposed.",
    "label": "?"
   },
   {
@@ -1244,18 +1249,23 @@
  "edge_cases": [
   {
    "case": "A credit note (write Type 1) booked in a Sale (200) or Purchase (100) daybook instead of a credit-note daybook (250/150). The docs neither allow nor forbid it.",
-   "handling": "Handled by design (D1): both sibling daybook types are always scanned and the entry is classified by the partner-line sign (net credit on the customer line, net debit on the supplier line = credit note), so it is returned under customer_refund / supplier_refund. For open sales items, TransactionType ('1: Sale credit note') overrides the sign. Labelled A until Horus confirms the rule or exposes the document Type on read.",
+   "handling": "Heuristic (A), pending H2. Both sibling daybook types are always scanned. In a folder without a 250 (150) daybook, where the create route posts refunds into 200 (100), the entry is classified by the partner-line sign (net credit on the customer line, net debit on the supplier line = credit note) and returned under customer_refund / supplier_refund. In a folder that has a credit-note daybook, the daybook type decides, so such an entry comes back as an invoice with negative amounts (known limitation of the proposed rule, C5).",
    "label": "A"
   },
   {
    "case": "Unconfirmed entry with DocumentNo 0.",
-   "handling": "invoice_number = null, status = 'draft', id = GUID. Warn consumers that the number will change once the accountant confirms the entry.",
+   "handling": "invoice_number = null, status = 'draft', id = GUID. Warn consumers that the number will change once the accountant confirms the entry. Such an entry has no business key: if the accountant edits it before confirming, the consumer cannot find it again through journal_id + invoice_number (Chift question C7).",
    "label": "D"
   },
   {
    "case": "Invoice updated in Horus between two syncs.",
-   "handling": "It comes back with a new id; the old id never comes back. Consumers dedupe on journal_id + invoice_number (Guide: 'reconcile on business identifiers such as the daybook and the entry number').",
-   "label": "F"
+   "handling": "It comes back with a new id; the old id never comes back. Consumers dedupe on journal_id + invoice_number (Guide: 'reconcile on business identifiers such as the daybook and the entry number'), which is possible only when the entry has a number (C7).",
+   "label": "D"
+  },
+  {
+   "case": "A change is committed around the updated_after boundary, or by a long-running write that commits after the consumer's cut-off.",
+   "handling": "Pass updated_after minus a small overlap as ModifiedAfter; consumers dedupe by id. Boundary semantics, LastModifiedDate precision and clock are undocumented (H10). A periodic full reconciliation catches what incremental sync misses, including deletions and replaced ids.",
+   "label": "A"
   },
   {
    "case": "Invoice updated via invoices.*.update without resending the file.",
@@ -1269,7 +1279,7 @@
   },
   {
    "case": "Date range spanning several fiscal years, or no date range with updated_after only.",
-   "handling": "Use the fiscal-years.list bounds. If Horus limits the period span, split the calls per fiscal year (unknown).",
+   "handling": "No date range: the default window agreed with Chift (C11; proposal: from the start of the current fiscal year to the latest EndDate). A range over several fiscal years uses the requested bounds. If Horus limits the period span, split the calls per fiscal year (unknown, H5).",
    "label": "?"
   },
   {
@@ -1329,13 +1339,18 @@
   },
   {
    "case": "Entry keyed in Horus Office with several partner lines (instalments) with different DueDates.",
-   "handling": "due_dates gets one element per partner line; due_date = latest DueDate.",
+   "handling": "due_dates gets one element per partner line; due_date = latest DueDate. Outstanding items return such an entry as one item per partner line, each with its own due date (see that route); both routes rely on the same Horus question (H8).",
    "label": "A"
   },
   {
    "case": "Analytic split that does not give whole percentages (e.g. 1000 split 333.33/333.33/333.34).",
-   "handling": "Largest-remainder rounding gives 33/33/34. Document the approximation.",
+   "handling": "Largest-remainder rounding gives 33/33/34. Document the approximation. On very small amounts the read-back can differ visibly (0.10 → 30/30/40).",
    "label": "D"
+  },
+  {
+   "case": "A cost schema covers only part of a line (e.g. line 1,000; cost line 1 DEPARTMENT=OFFICE, PROJECT=P1 for 600; cost line 2 DEPARTMENT=SHOP for 400).",
+   "handling": "Return DEPARTMENT (100% covered) and leave PROJECT out with a connector warning, rather than inflating P1 to 100% (proposal). Whether Horus allows a cost line without a value for a non-mandatory schema is H13.",
+   "label": "A"
   },
   {
    "case": "Free-value cost schema (CostSectionType 900) with no CostSection Id.",
@@ -1369,7 +1384,7 @@
   },
   {
    "case": "journal_ids contains a daybook outside the sibling pair of invoice_type (e.g. a bank daybook for customer_refund).",
-   "handling": "Ignore it; return an empty page if no daybook of the pair remains (or a 400 error, per Chift policy). A 200 daybook in a customer_refund request is valid (D1).",
+   "handling": "Per Chift's convention: 400 naming the id, or ignore it and return an empty page if no daybook of the pair remains. A 200 daybook in a customer_refund request is valid (D1). An id that is still unknown after one cache refresh → 400.",
    "label": "D"
   },
   {
@@ -1394,7 +1409,7 @@
   },
   {
    "case": "Single-invoice read or attachments request for an Id that has since been replaced by an update or deleted.",
-   "handling": "GET /book-entries.info presumably answers '404: Not Found – the resource was not found' (its behaviour for replaced entries is undocumented). Return a Chift not-found error; the consumer re-syncs and finds the new Id through journal_id + invoice_number. An Id that belongs to another folder (Data.Folder.Id ≠ folder_id) returns 400 (D13).",
+   "handling": "GET /book-entries.info presumably answers '404: Not Found – the resource was not found' (its behaviour for replaced entries is undocumented). Return a Chift not-found error; the consumer re-syncs and finds the new Id through journal_id + invoice_number, which works only when the entry has a number. An Id that belongs to another folder (Data.Folder.Id ≠ folder_id) returns 400 (D13).",
    "label": "A"
   },
   {
@@ -1404,18 +1419,23 @@
   },
   {
    "case": "Entry in a Sale (200) daybook whose customer line is a net credit (or a Purchase (100) entry whose supplier line is a net debit).",
-   "handling": "Classified as a credit note (D1): returned by customer_refund / supplier_refund, not by customer_invoice / supplier_invoice, although its journal_id points to the 200/100 daybook.",
+   "handling": "Folder without a 250 (150) daybook: classified as a credit note by the sign (D1) and returned by customer_refund / supplier_refund, although its journal_id points to the 200/100 daybook. Folder with a credit-note daybook: returned as an invoice with negative amounts (daybook first, D1).",
    "label": "A"
   },
   {
    "case": "Entry with no partner line (CompanyDetail null, no AccountType 100/200 line) or a partner net of zero.",
-   "handling": "The sign cannot decide, so the daybook Type does: 200/100 = invoice, 250/150 = credit note (D1 fallback).",
+   "handling": "The daybook Type decides: 200/100 = invoice, 250/150 = credit note (D1).",
    "label": "A"
   },
   {
-   "case": "Open sales item whose TransactionType contradicts the partner-line sign.",
-   "handling": "TransactionType wins (D1). Log the mismatch for review.",
+   "case": "Open sales item whose TransactionType contradicts the D1 classification.",
+   "handling": "The D1 rule decides; log the mismatch for review. The class does not change when the item is later closed and drops off the open-sales list.",
    "label": "D"
+  },
+  {
+   "case": "Customer or supplier invoice with a credit-direction total (a negative invoice), which Chift's due-date sign convention allows.",
+   "handling": "Daybook first (D1): returned under customer_invoice / supplier_invoice with negative amounts. Only in a folder without a credit-note daybook does the sign heuristic return it as a refund (known limitation; Chift decision C5).",
+   "label": "A"
   },
   {
    "case": "Header comment without ' | ' (only a reference was written, or the text was typed in Horus Office).",
@@ -1424,7 +1444,7 @@
   },
   {
    "case": "Purchase line whose VatDetail matches several catalogue entries that differ only by TaxKind, or a line with TaxCondition 4 (Article).",
-   "handling": "tax_code = null; tax_rate and tax_amount are still returned (D2). Never guess the code and never return VatCode.",
+   "handling": "tax_code = null; tax_rate and tax_amount are still returned (D2). Never guess the code and never return VatCode (its meaning is undocumented, H1).",
    "label": "D"
   },
   {
@@ -1438,8 +1458,13 @@
    "label": "D"
   },
   {
-   "case": "Horus answers 403 on a folder (folder not accessible with this license or user).",
-   "handling": "Chift 400 'folder not accessible with this connection' (D7); no retry.",
+   "case": "folder_id of a folder the Horus user can access but that was not selected at Chift activation.",
+   "handling": "400 'folder not selected for this connection' before any Horus call (D7), unless Chift confirms its platform rejects it upstream (C12).",
+   "label": "D"
+  },
+  {
+   "case": "Horus answers 403 (the connected user may not access the folder or perform the action).",
+   "handling": "Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details (D7); no retry.",
    "label": "D"
   },
   {
@@ -1455,19 +1480,19 @@
    "why": "Single-invoice reads and the attachments route use book-entries.info by Id. Its documented response equals a book-entries.list item with line references only, so a single read still needs account-histories.list (with a month window) and companies.info, and the 404 behaviour decides how stale Ids are reported."
   },
   {
-   "question": "Can a credit note (Type 1) be posted into a 200/100 daybook, and an invoice into 250/150? Is the document Type (invoice / credit note) exposed anywhere on read besides invoices.sales.outstanding.list TransactionType?",
+   "question": "Can a credit note (Type 1) be posted into a 200/100 daybook, and an invoice into 250/150? Is the document Type (invoice / credit note) exposed anywhere on read besides invoices.sales.outstanding.list TransactionType? Is the Type stored per entry, and can it be exposed on book-entries.list or account-histories.list for all entries? Are negative totals accepted with Type 0? Does matching change the entry Id or LastModifiedDate?",
    "for_whom": "Horus",
-   "why": "D1 makes the sign-based classification over both sibling daybook types mandatory and labels it A; a Horus answer, or a read-side Type, would confirm or replace the rule and could halve the book-entries.list calls."
+   "why": "D1 classifies by daybook type, with a sign heuristic only in folders without a credit-note daybook (A); a Horus answer, or a read-side Type, would confirm or replace the rule and could halve the book-entries.list calls."
   },
   {
-   "question": "Do StartMonth/StartYear/EndMonth/EndYear filter on AccountingMonth/AccountingYear or on Date? Is there a maximum span, a response size limit or a rate limit?",
+   "question": "Do StartMonth/StartYear/EndMonth/EndYear filter on AccountingMonth/AccountingYear or on Date? Is there a maximum span, a response size limit or a rate limit? Is there a practical limit for a multi-year account-histories.list on a collective account, and could Filter.CompanyId accept several ids?",
    "for_whom": "Horus",
    "why": "Day-level date filtering, window widening and caching strategy depend on it; no rate limits are documented."
   },
   {
-   "question": "On book-entries.list, does Filter.ModifiedAfter apply to the entry or to its account histories (the description says 'account-histories')? Does matching or unmatching update the LastModifiedDate of the entry and/or of the partner account-history line?",
+   "question": "On book-entries.list, does Filter.ModifiedAfter apply to the entry or to its account histories (the description says 'account-histories')? Does matching or unmatching update the LastModifiedDate of the entry and/or of the partner account-history line? Is ModifiedAfter strict or inclusive, how precise is LastModifiedDate and which clock sets it? Does ModifiedAfter on account-histories.list return every line of a replaced entry?",
    "for_whom": "Horus",
-   "why": "If matching updates the line, account-histories.list ModifiedAfter on partner lines could catch newly paid invoices without a full open-items refresh."
+   "why": "Incremental sync passes ModifiedAfter on both lists with a small overlap; the answers decide whether newly paid invoices and every changed line are caught without a full re-read."
   },
   {
    "question": "Which relationships can be sideloaded with Include on book-entries.list and account-histories.list (AccountHistories? Document? CompanyDetail.Company on lines? nested Ibans)? Do Included entities carry the full companies.list schema?",
@@ -1485,9 +1510,9 @@
    "why": "This affects whether payments and paid status can come from one endpoint or must be rebuilt from matching."
   },
   {
-   "question": "Can Horus provide the accepted tax-combination files (sales and purchases), and are they versioned? Is VatDetail filled on base lines, VAT lines or both?",
+   "question": "Are the published tax-combination spreadsheets current and complete, are they versioned, and which source is authoritative for the LU codes? Is VatDetail filled on base lines, VAT lines or both? What does VatCode mean? (First part consolidated as H1.)",
    "for_whom": "Horus",
-   "why": "The D2 synthetic VAT catalogue is built from these files and lines[].tax_code is returned only when exactly one catalogue entry matches; tax_rate and tax_amount allocation depend on where VatDetail sits."
+   "why": "The D2 synthetic VAT catalogue is built from these files per folder legislation and direction, and lines[].tax_code is returned only when exactly one entry of the folder's list matches; tax_rate and tax_amount allocation depend on where VatDetail sits."
   },
   {
    "question": "Direction and meaning of CurrencyRate; currency of CompanyDetail amounts (and of account-history Debit/Credit). Is the folder base currency always EUR?",
@@ -1510,9 +1535,9 @@
    "why": "API-pushed entries are unconfirmed by default, so this changes what consumers see right after they create an invoice."
   },
   {
-   "question": "D1 returns an entry found in a sales daybook as customer_refund when its customer line is a net credit: is that acceptable for consumers who filter on journal_id? Should refund amounts be returned positive? Is 'paid' acceptable for an invoice fully offset by a credit note?",
+   "question": "If the document type cannot be read, which misclassification is more acceptable: a credit note keyed into a sales daybook returned as an invoice (daybook first, proposed), or a negative invoice returned as a refund (sign first)? Can a customer_invoice carry a credit-direction total in your model? Should refund amounts be returned positive? Is 'paid' acceptable for an invoice fully offset by a credit note?",
    "for_whom": "Chift",
-   "why": "It affects the invoice_type filter semantics, the sign conventions and the payment_status meaning that consumers rely on."
+   "why": "It affects the invoice_type filter semantics, the sign conventions and the payment_status meaning that consumers rely on. (Consolidated as C5 and C10.)"
   },
   {
    "question": "Should lines be returned even when include_invoice_lines=false, given that Horus needs no extra request for them?",
@@ -1520,19 +1545,19 @@
    "why": "The contract allows omission only 'when this requires extra requests'; the choice trades consistency against payload size."
   },
   {
-   "question": "Is it acceptable that invoice id changes when the accountant updates the invoice, or should the connector expose a composite business key?",
+   "question": "Is it acceptable that invoice id changes when the accountant updates the invoice, or should the connector expose a composite business key? An entry pushed without a number cannot be found again after an edit: may the connector require invoice_number (C7)? Do consumers rely on updated_after to pick up status changes such as 'paid', and what periodic full re-sync cadence is acceptable, given that deletions and replaced ids are not reported?",
    "for_whom": "Chift",
    "why": "Id stability affects idempotency and the follow-up GET /accounting/attachments call, which resolves the Document through GET /book-entries.info?Id={invoice_id} and may fail once that Id has been replaced."
   },
   {
-   "question": "What default period applies when date_from/date_to are absent, given that Horus requires a month window and has no pagination? How far back should the payment search start (advance payments)?",
+   "question": "What default period applies when date_from/date_to are absent, given that Horus requires a month window and has no pagination? How far back should the payment search start (advance payments)? How far back must an updated_after poll look, and are consumers expected to dedupe items re-delivered by a safety overlap?",
    "for_whom": "Chift",
-   "why": "It drives cost and latency; a full-history scan per page request is unrealistic."
+   "why": "It drives cost and latency; a full-history scan per page request is unrealistic. Proposal: from the start of the current fiscal year."
   },
   {
    "question": "How should approval_status (filter and field) behave for a target without an approval workflow: always 'unknown' and reject the filter, or map Verified to 'approved'?",
    "for_whom": "Chift",
-   "why": "Horus has only an optional Verified flag."
+   "why": "Horus has only an optional Verified flag. (Consolidated in section 9: Chift question on filters that cannot be honoured exactly.)"
   },
   {
    "question": "Where does the invoice header Comment surface on read (partner-line Comment, RemarkCompany, Remark)?",
@@ -1540,25 +1565,25 @@
    "why": "D3 reads reference and customer_memo by splitting the header Comment; the read order (partner-line Comment, then RemarkCompany, then the sales Remark) is an assumption until Horus answers."
   },
   {
-   "question": "Can TaxKind be exposed on read (in account-histories VatDetail)? What does the read-only TaxCondition value '4 = Article' correspond to on write?",
+   "question": "Can TaxKind be exposed on read (in account-histories VatDetail)? What does the read-only TaxCondition value '4 = Article' correspond to on write? If VatDetail.VatCode identifies one accepted combination (TaxKind included), could it disambiguate TaxKind on read?",
    "for_whom": "Horus",
    "why": "Without TaxKind several purchase VAT codes can match the same VatDetail, so D2 returns tax_code = null; TaxCondition 4 has no write-side equivalent and never matches the catalogue."
   },
   {
-   "question": "Is omitting Free-schema analytics (CostSectionType 900) from invoice lines acceptable in v1, or should a later version expose them (for example with a documented 'schemaId|value' id)?",
+   "question": "Is omitting Free-schema analytics (CostSectionType 900) from invoice lines acceptable in v1, or should a later version expose them (for example with a documented 'schemaId|value' id)? For a plan that covers only part of a line, should the connector leave it out (proposed) or return a partial distribution? Is a read-back split that differs from the one sent on small lines acceptable (0.10 sent as 33/33/34 reads back as 30/30/40)?",
    "for_whom": "Chift",
    "why": "D8 excludes Free schemas from Chift analytics, so their cost lines are dropped from analytic_distribution with only a connector warning."
   },
   {
-   "question": "For foreign-currency sales invoices, should the connector use the invoice-currency amounts while the item is open (they disappear from Horus once it is closed), or always return a stable EUR representation?",
+   "question": "For foreign-currency sales invoices, should the connector use the invoice-currency amounts while the item is open (they disappear from Horus once it is closed), or always return a stable EUR representation? For purchases, whose original-currency amounts are never readable, is 'EUR amounts labelled EUR' acceptable? A later option, once H4 gives the rate direction, is the real currency code with amounts converted through CurrencyRate.",
    "for_whom": "Chift",
-   "why": "Under D4 the same invoice can switch from its own currency to EUR between two syncs, which may confuse consumers that compare amounts."
+   "why": "Under D4 the same invoice can switch from its own currency to EUR between two syncs, which may confuse consumers that compare amounts. (Consolidated in section 9: Chift question on the currency representation of invoices on read.)"
   }
  ],
  "evidence_gaps": [
   "No pagination, total count or rate-limit information anywhere in the Horus reference, guides or raw export (grep for page/limit/offset/skip/throttle/rate limit found nothing).",
   "GET /book-entries.info is documented (its page was supplied separately and is not in the raw Notion export) with a single Id query parameter and a response identical to a book-entries.list item. No source says what it returns for a replaced or deleted Id beyond the generic '404: Not Found – the resource was not found', and no documented field backs the guide's 'full detail' wording beyond the header.",
-  "The accepted tax-combination spreadsheets (Tax-combinations-sales.xlsx / -purchases.xlsx) are linked but not provided, so the D2 synthetic VAT catalogue (and therefore lines[].tax_code) cannot be built or checked from the sources.",
+  "Resolved: the accepted tax-combination spreadsheets (Tax-combinations-sales.xlsx / -purchases.xlsx) linked from the invoice reference pages were downloaded on 13 Oct 2026 (appendix C) and feed the D2 catalogue per legislation and direction. Remaining gaps: the LU sheets use TaxOrigin codes outside the reference enums, and the meaning of VatDetail.VatCode is undocumented (H1).",
   "No source says which account-history line types (base 300 or VAT 400) carry VatDetail; the only stated condition is IncludeVatDetail=true and a VAT-liable folder.",
   "Descriptions are empty for book-entries.list CompanyDetail fields (RemarkPayment, RemarkCompany, DueDate, PaymentDate, TotalAmount, TurnoverAmount, TaxAmount, DiscountDetail) and for the IncludeReport/IsReport semantics.",
   "book-entries.list Filter.ModifiedAfter/ModifiedBefore descriptions say 'Include only account-histories modified after a given date', which looks like a copy-paste, so entry-level versus line-level semantics are unclear.",
@@ -1573,25 +1598,25 @@
   "Semantics of daybooks.list IsUsed and companies.list CustomerActivitySuspended are undocumented, although the shared partner mapper (D9) uses CustomerActivitySuspended for active.",
   "account-histories.list VatDetail has no TaxKind, and its TaxCondition enum has an extra value '4 = Article' absent from the write enum (0-3), so purchase VAT codes cannot always be rebuilt on read (D2).",
   "No source says where the invoice header Comment (invoices.*.new → Comment) surfaces on read: the partner-line Comment, CompanyDetail.RemarkCompany and the sales Remark all lack a description (D3).",
-  "No source documents a read-side invoice/credit-note flag on book entries or account-history lines, or which write-side Type a daybook accepts, so the D1 sign classification cannot be verified from the docs."
+  "No source documents a read-side invoice/credit-note flag on book entries or account-history lines, or which write-side Type a daybook accepts, so the D1 classification cannot be verified from the docs."
  ],
  "ba_insights": [
   "Horus is a ledger: invoices go in through invoices.*.new/update but come back out only as book entries (header) plus account-history lines. To explain it to a client: 'Horus lets you send an invoice, but you read it back as an accounting entry, so we rebuild the invoice from its journal lines.'",
-  "Why several calls are needed: each part of a Chift invoice lives in a different Horus resource. Header → book-entries.list (one call per daybook of both sibling types); lines, VAT, analytics, currency, partner account, due dates, matching and the partner-line sign that classifies invoice vs credit note → account-histories.list; TransactionType (sales), invoice-currency totals and the sales Remark → invoices.sales.outstanding.list; payments → MatchNo matching on the partner accounts; partner → companies (sideloaded) plus accounts.list for the concentration account; attachment → Document ref, downloaded via documents.download. This is the multi-endpoint case the brief warns about.",
+  "Why several calls are needed: each part of a Chift invoice lives in a different Horus resource. Header → book-entries.list (one call per daybook of both sibling types); lines, VAT, analytics, currency, partner account, due dates, matching and the partner-line sign (used by D1 only in folders without a credit-note daybook) → account-histories.list; TransactionType (sales, D1 consistency check), invoice-currency totals and the sales Remark → invoices.sales.outstanding.list; payments → MatchNo matching on the partner accounts; partner → companies (sideloaded) plus accounts.list for the concentration account; attachment → Document ref, downloaded via documents.download. This is the multi-endpoint case the brief warns about.",
   "Terminology to defend: Horus 'folder' = Chift folder (legal entity); Horus 'company' = Chift partner (client, supplier or beneficiary), NOT the legal entity; 'daybook' = journal; 'book entry' = invoice/entry header; 'account history' = ledger line; 'cost schema' = analytic plan; 'cost section' = analytic account; 'cost history' = analytic distribution of a line; 'MatchNo' = matching number. By deduction from the matching rules, MatchNo is allocated per customer, per supplier or per general account, so it is not unique across the folder.",
-  "Selecting invoice_type (D1): read both sibling daybook types (200 + 250 for sales, 100 + 150 for purchases), then classify each entry by the partner-line sign (customer: net debit = invoice; supplier: net credit = invoice), with TransactionType overriding it for open sales items. Do not use EntryType (it describes Normal versus closing/opening operations). Why mandatory: the create route can post a credit note into a 200/100 daybook when no credit-note daybook exists, so selecting by daybook alone would return that credit note as an invoice and break the create → read round-trip. The rule is A until Horus confirms it.",
-  "Filter emulation: folder_id and journal_ids (DaybookId/DaybookIds) and updated_after (ModifiedAfter) are native. date_from/date_to are native only at month level and need a day-level post-filter. page/size, payment_status and approval_status are fully emulated in the connector, so their cost does not shrink with page size.",
+  "Selecting invoice_type (D1): read both sibling daybook types (200 + 250 for sales, 100 + 150 for purchases). Proposed rule, daybook first: 250/150 = credit note, 200/100 = invoice; the partner-line sign is used only in folders without a credit-note daybook, where the create route's fallback posts refunds into 200/100. TransactionType on open sales items is a consistency check, not an override, so the class is stable over the document's life. Do not use EntryType. The alternative (sign first everywhere) would return every negative invoice as a refund, although Chift's contract allows negative invoices. A until Horus exposes the Type (H2); Chift chooses (C5).",
+  "Filter emulation: folder_id and journal_ids (DaybookId/DaybookIds) are native. updated_after maps to ModifiedAfter on book-entries.list and account-histories.list, inside a mandatory month window; whether it reflects matching changes is unconfirmed (H10), and deletions and replaced ids are not reported. date_from/date_to are native only at month level and need a day-level post-filter. page/size, payment_status and approval_status are fully emulated in the connector, so their cost does not shrink with page size.",
   "Prefer bulk calls over N+1. One account-histories.list call with DaybookIds returns all lines of all invoices in the window; grouping by BookEntry.Id replaces one call per invoice. The same applies to payments: one account-histories.list call filtered on the partner ledger accounts (no daybook whitelist, which would miss offsets) joined on (company, account type, MatchNo), instead of invoices.sales.outstanding.info per invoice.",
   "Load all daybooks once, not only the sales or purchase ones. Payment lines only carry DaybookSearchKey, so the connector needs the full daybook list (keyed by SearchKey) to fill payments[].journal_id, journal_name and journal_type.",
-  "Call count for a typical request (customer_invoice, folder with 1 Sale and 1 SaleCreditNote daybook, 1 quarter, lines + partner + payments): book-entries.list ×2 with Include=CompanyDetail.Company, account-histories.list ×1 (lines), invoices.sales.outstanding.list ×1 (TransactionType, always for sales) and account-histories.list ×1 (payment lines) = 5 calls per request, more with a cold cache (folders.info, daybooks.list, accounts.list, and cost-schemas.list + cost-sections.list per List schema when analytics are on). supplier_invoice with 3 Purchase daybooks and 1 PurchaseCreditNote daybook: 4 + 1 + 1 = 6 (no open-items list on the purchase side). General formula, with D = daybooks of both sibling types: sales D + 2 to D + 3, purchases D + 1 to D + 2. The naive N+1 design for 50 invoices is about 1 + 50 (lines) + 50 (companies.info) + 50 (outstanding.info) + 50 (documents.info), roughly 200 calls.",
+  "Call count for a typical request (customer_invoice, folder with 1 Sale and 1 SaleCreditNote daybook, 1 quarter, lines + partner + payments): book-entries.list ×2 with Include=CompanyDetail.Company, account-histories.list ×1 (lines), invoices.sales.outstanding.list ×1 (D1 consistency check, D3 Remark and D4 currency totals; always for sales) and account-histories.list ×1 (payment lines) = 5 calls per request, more with a cold cache (folders.info, daybooks.list, accounts.list, and cost-schemas.list + cost-sections.list per List schema when analytics are on). supplier_invoice with 3 Purchase daybooks and 1 PurchaseCreditNote daybook: 4 + 1 + 1 = 6 (no open-items list on the purchase side). General formula, with D = daybooks of both sibling types: sales D + 2 to D + 3, purchases D + 1 to D + 2. The naive N+1 design for 50 invoices is about 1 + 50 (lines) + 50 (companies.info) + 50 (outstanding.info) + 50 (documents.info), roughly 200 calls.",
   "What sideloading changes: Include=CompanyDetail.Company on book-entries.list returns the partners in the same response, so include_partner_info costs zero extra calls instead of N companies.info calls. A cached companies.list (1 call) gives the same result but loads every company in the folder, and it remains the fallback if sideloaded objects are partial. Sideloading only exists on book-entries.list, account-histories.list, companies.list and invoices.sales.outstanding.list (Guide: Sideloading); it does not remove the lines call and does not cover IBANs (ibans.list is still N+1).",
-  "Guide: Reading accounting data drives the design. It lists the account-histories.list filters (DaybookIds, CompanyId, NotMatchedOnly, ConfirmedOnly, Include*Detail), says 'Periods are expressed by month and year', recommends ModifiedAfter for incremental sync, and warns 'Updated entries get a new Id ... reconcile on business identifiers such as the daybook and the entry number'. It also points to book-entries.info for 'the full detail of one entry'. That endpoint is documented: it takes only an Id (no daybook or period) and returns the same header as a book-entries.list item, without lines or sideloading. So it changes neither the list path nor its call count, but it makes the attachments lookup a single call and a single-invoice read 2 calls (book-entries.info + account-histories.list with Filter.BookEntryId), 3 for a sales entry (invoices.sales.outstanding.info for the D1 TransactionType override), up to 5 with partner and payments.",
-  "Status mapping is driven by the Horus workflow, not by payments alone. API-pushed entries are unconfirmed until the accountant confirms them, so Confirmed=false → draft and Confirmed=true → posted. Full matching (MatchStatus 900) → paid, but this is an assumption: matching also covers credit notes and misc operations. 'cancelled' cannot be produced because Horus replaces or deletes entries instead of cancelling them.",
+  "Guide: Reading accounting data drives the design. It lists the account-histories.list filters (DaybookIds, CompanyId, NotMatchedOnly, ConfirmedOnly, Include*Detail), says 'Periods are expressed by month and year', recommends ModifiedAfter for incremental sync, and warns 'Updated entries get a new Id ... reconcile on business identifiers such as the daybook and the entry number'. It also points to book-entries.info for 'the full detail of one entry'. That endpoint is documented: it takes only an Id (no daybook or period) and returns the same header as a book-entries.list item, without lines or sideloading. So it changes neither the list path nor its call count, but it makes the attachments lookup a single call and a single-invoice read 2 calls (book-entries.info + account-histories.list with Filter.BookEntryId), 3 for a sales entry (invoices.sales.outstanding.info for the D1 consistency check, D3 and D4), up to 5 with partner and payments.",
+  "Status mapping is driven by the Horus workflow, not by payments alone. Entries pushed through the API are unconfirmed by default (Guide: Data model) unless the proposed direct posting mode is chosen (C1), so Confirmed=false → draft and Confirmed=true → posted. Full matching (MatchStatus 900) → paid, but this is an assumption: matching also covers credit notes and misc operations. 'cancelled' cannot be produced because Horus replaces or deletes entries instead of cancelling them.",
   "attachments_info is always 'yes_to_request' or 'no': Horus exposes a Document reference on the entry and returns raw bytes through documents.download, never a URL. This matches Chift's base64 GET /accounting/attachments pattern. An invoice update deletes the attachment, so the new entry shows 'no' unless the file is sent again.",
   "Label honesty matters: the verifiers downgraded several claims from F to D or A (tax_rate from VatDetail, line description from Comment, folder currency EUR, 'paid' = fully matched, beneficiary partners as legal entities). When presenting to a client, separate what the docs state from what we infer and from what Horus must confirm.",
-  "Why 'workaround' and not 'supported' (D11): everything important is readable, but the connector needs D + 1 to D + 3 calls, several emulated filters (including the mandatory D1 split) and approximations (per-line tax, tax_code that is null when ambiguous, EUR fallback for foreign currencies, whole-number analytic percentages, dedicated_amount, 'paid'), and some fields are lost (quantity/unit price, delivery date, payment term/method, withholding, cash discount, Free-schema analytics, is_company). Recommended next step: put the open questions to Horus (developer@horus-software.be) before build, mainly the credit-note daybook rule, the accepted tax-combination files and TaxKind on read, where the header Comment surfaces on read, the currency of amounts and CurrencyRate, the period basis, VatDetail placement, ModifiedAfter semantics and what book-entries.info returns for replaced Ids.",
+  "Why 'workaround' and not 'supported' (D11): everything important is readable, but the connector needs D + 1 to D + 3 calls, several emulated filters (including the D1 split, a heuristic pending H2) and approximations (per-line tax, tax_code that is null when ambiguous, EUR fallback for foreign currencies, whole-number analytic percentages, dedicated_amount, 'paid'), and some fields are lost (quantity/unit price, delivery date, payment term/method, withholding, cash discount, Free-schema analytics, is_company). Recommended next step: put the open questions to Horus (developer@horus-software.be) before build, mainly the credit-note daybook rule, confirmation of the tax-combination files and TaxKind on read, where the header Comment surfaces on read, the currency of amounts and CurrencyRate, the period basis, VatDetail placement, ModifiedAfter semantics and what book-entries.info returns for replaced Ids.",
   "Cross-route consistency is part of the deliverable: the same Horus data must read back the way the create routes wrote it. That is why the read side reuses the shared conventions: one daybook-type table (D6), one synthetic VAT-code grammar (D2: 'S-21-0-0', 'P-21-2-0-0-1-true'), one header-Comment convention (D3: '{reference} | {customer_memo}'), one currency assumption (D4), one partner mapper (D9) and one analytics cache (D8). To a client: 'what you post through Chift comes back identical through Chift, and where Horus cannot carry a value we say so instead of guessing'.",
-  "How to explain tax_code to a client (D2): Horus has no VAT-code list; a VAT treatment is a combination of rate, origin, type and (purchases) kind and condition. The connector turns each accepted combination into a stable id. On read, Horus does not return TaxKind, so when two purchase codes differ only by kind the connector returns no code rather than a wrong one; the rate and the amount are always returned.",
+  "How to explain tax_code to a client (D2): Horus has no VAT-code list; a VAT treatment is a combination of rate, origin, type and (purchases) kind and condition. The connector turns each accepted combination, taken from the Horus tax-combination files for the folder's legislation (BE or LU) and direction, into a stable id. On read, Horus does not return TaxKind, so when two purchase codes differ only by kind the connector returns no code rather than a wrong one; the rate and the amount are always returned.",
   "How to explain currencies (D4): Horus ledger amounts are assumed to be in the folder currency (EUR). Invoice-currency amounts are only visible for open sales invoices, so other foreign-currency invoices come back in EUR, labelled 'EUR', rather than as EUR numbers carrying a USD label. accounting_info.main_currency_total always holds the EUR amount."
  ],
  "changes_applied": [
@@ -1628,7 +1653,13 @@
   "open_questions: [1] reworded to the D1 question; [7] becomes the D2 accepted-combination files question; [8] becomes the D4 question 'Direction and meaning of CurrencyRate; currency of CompanyDetail amounts'; [10] narrowed to CustomerActivitySuspended (D9) and IsUsed; [12] reworded for the mandatory D1 reclassification; added Horus questions on where the header Comment surfaces on read (D3) and on TaxKind on read plus TaxCondition '4 = Article' (D2), and Chift questions on Free schemas (D8) and the foreign-currency representation (D4).",
   "evidence_gaps: [2], [12], [14] tied to D2, D4 and D9; added gaps for the missing TaxKind / extra TaxCondition value, the undocumented read location of the header Comment, and the absence of a read-side invoice/credit-note flag.",
   "ba_insights: [1], [3], [7], [13] updated for D1, the new call counts and D11; [9] single-invoice read count aligned with call_sequence step 14 (3 calls for a sales entry, up to 5); added insights on cross-route consistency, how to explain the synthetic tax_code (D2) and how to explain currencies (D4).",
-  "Not changed on purpose: verdict (workaround, consistent with D11), the remaining field_mappings rows, and the decisions that do not touch this route (D5 outstanding signs, D10 partner_info, D12 posting status, D14 create_invoice daybook row)."
+  "Not changed on purpose: verdict (workaround, consistent with D11), the remaining field_mappings rows, and the decisions that do not touch this route (D5 outstanding signs, D10 partner_info, D12 posting status, D14 create_invoice daybook row).",
+  "Review round 2 (E2): S1-02 bounded default window (current fiscal year, C11) on date_from/date_to, step 3 and the window row; page cache tied to the Chift caching question; list-volume limitation reworded per LD3/LD10.",
+  "Review round 2 (E2): S1-08/S2-01/S3-09 tax_code encoded against the folder tax-combination list (Legislation + direction, appendix C), LU OSS origins 24/26/29, canonical rendering, VatCode qualified; \"not provided\" removed; evidence gap 2 resolved; folders.info returns Legislation.",
+  "Review round 2 (E2): S2-03 D1 rewritten as daybook first with the sign heuristic only in folders without a credit-note daybook; TransactionType demoted to a consistency check everywhere; header amounts signed (negative invoices keep negative amounts); new negative-invoice edge case.",
+  "Review round 2 (E2): S2-07 folder selection enforced (400 folder not selected); S4-14 Horus 403 mapped to access denied (folder or action) with Details.",
+  "Review round 2 (E2): S2-08/S4-07 updated_after merged (overlap, ModifiedAfter on both lists, union and completion, look-back C11, label A); payment call only for include_payments, payload and mitigations; new volume limitation and boundary edge case.",
+  "Review round 2 (E2): S2-14 approval_status single rule for filter and field; journal_ids refresh on miss then 400. S3-11 partial-coverage rule and small-line read-back. S2-12/S3-13/S1-09 question consolidation notes. S4-03/S4-05/S4-16 instalments, missing-number reconciliation, call budget."
  ],
  "rejected_findings": []
 }

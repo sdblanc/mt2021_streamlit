@@ -6,19 +6,19 @@
    "chift_path": "/consumers/{consumer_id}/accounting/accounts",
    "chift_name": "Create ledger account",
    "verdict": "workaround",
-   "one_line": "Use POST /accounts.new (FolderId resolved with the shared folder rule (D7), SearchKey = number, Heading = name). Before it, run an exact-match duplicate check on accounts.list. After it, call GET /accounts.info on the returned Id, checking Data.Folder.Id (D13), to build the AccountItem response. The Chift type cannot be written, because accounts.new and accounts.update have no category field."
+   "one_line": "Use POST /accounts.new (FolderId resolved with the shared folder rule (D7), SearchKey = number, Heading = name). Before it, run an exact-match duplicate check on accounts.list. After it, call GET /accounts.info on the returned Id, checking Data.Folder.Id (D13), to build the AccountItem response (built from the request if that read-back fails). The Chift type cannot be written, because accounts.new and accounts.update have no category field."
   },
   {
    "chift_method": "GET",
    "chift_path": "/consumers/{consumer_id}/accounting/chart-of-accounts",
    "chift_name": "Get chart of accounts",
    "verdict": "workaround",
-   "one_line": "Use POST /accounts.list on the FolderId resolved by the D7 rule, fetched in full and cached per folder; classes is applied as a SearchKey 'starts with' prefix. Cached POST /daybooks.list (plus optional companies.list and line-level AccountType from account-histories / outstanding) feeds the computed type. The type filter and page/size/total are emulated in the connector, and scheme_ids is null."
+   "one_line": "Use POST /accounts.list on the FolderId resolved by the D7 rule, fetched in full and cached per folder; classes is applied as a SearchKey 'starts with' prefix. Cached POST /daybooks.list (plus optional companies.list, and the line-level AccountType from account-histories.list, loaded when the request filters on type=vat or type=cash) feeds the computed type. The type filter and page/size/total are emulated in the connector, and scheme_ids is null."
   }
  ],
- "summary": "Horus has its own Accounts resource: the folder's general chart of accounts. Each account has a GUID Id and a SearchKey that is unique in the folder and 'usually the account number'. Create ledger account therefore maps to POST /accounts.new (FolderId, SearchKey ← number, Heading ← name). An exact-match duplicate check on accounts.list runs before it. A GET /accounts.info read-back runs after it, because .new returns only the Id, and the read-back also checks that Data.Folder.Id is the requested folder (D13). The Chift type cannot be written (accounts.new and accounts.update have no category field), so the type returned is computed from Horus and can differ from the request. Get chart of accounts maps to POST /accounts.list, best fetched in full and cached per folder as the guide recommends. classes is applied as a 'starts with' prefix, and the type filter, page/size and total are emulated in the connector, since Horus has no category filter and no pagination. Every call is scoped by FolderId, resolved with the shared folder rule (D7):\n- folder_id is required when the connection has more than one selected folder;\n- the single folder selected at activation is the default;\n- with no stored selection, a folder is used only if POST /folders.list {Mode: 0} returns exactly one;\n- otherwise the connector returns 400 'folder_id required', and a Horus 403 becomes a Chift 400 'folder not accessible with this connection'.\nChift type has no account-level Horus field and is computed from several sources, in order:\n- daybooks.list concentration accounts (bank, financial; cash is uncertain);\n- IntCategory (only 'COLLECCUS' is documented);\n- optionally, company concentration accounts and line-level AccountType ('100' / '200' / '400' / '500' on account-history or outstanding lines, which only covers accounts with movements);\n- AccountCategory / AccountSubCategory;\n- finally, a Belgian number-prefix fallback (an assumption).\nCustomers and suppliers are Horus 'companies', usually booked on shared concentration accounts (e.g. 400000/440000) with a CompanyId. The chart therefore normally holds general and collective accounts and no per-partner accounts. scheme_ids is always null. The main risks are:\n- type reliability (payable, vat, cash);\n- undocumented SearchKey rules and duplicate behaviour;\n- no delete or renumber endpoint for accounts anywhere in the 72-endpoint reference (D15).\nUnder the shared verdict calibration (D11), both routes are 'workaround'.",
+ "summary": "Horus has its own Accounts resource: the folder's general chart of accounts. Each account has a GUID Id and a SearchKey that is unique in the folder and 'usually the account number'. Create ledger account therefore maps to POST /accounts.new (FolderId, SearchKey ← number, Heading ← name). An exact-match duplicate check on accounts.list runs before it. A GET /accounts.info read-back runs after it, because .new returns only the Id, and the read-back also checks that Data.Folder.Id is the requested folder (D13); if it fails, the response is built from the request. The Chift type cannot be written (accounts.new and accounts.update have no category field), so the type returned is computed from Horus and can differ from the request. Get chart of accounts maps to POST /accounts.list, best fetched in full and cached per folder as the guide recommends. classes is applied as a 'starts with' prefix, and the type filter, page/size and total are emulated in the connector, since Horus has no category filter and no pagination. Every call is scoped by FolderId, resolved with the shared folder rule (D7):\n- folder_id is required when the connection has more than one selected folder, and a folder_id outside the activation selection is rejected with 400 'folder not selected for this connection';\n- the single folder selected at activation is the default;\n- with no stored selection, a folder is used only if POST /folders.list {Mode: 0} returns exactly one;\n- otherwise the connector returns 400 'folder_id required', and a Horus 403 becomes a Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details.\nChift type has no account-level Horus field and is computed from several sources, in order:\n- daybooks.list concentration accounts (bank, financial; cash is uncertain);\n- IntCategory (only 'COLLECCUS' is documented);\n- optionally, company concentration accounts, and line-level AccountType ('100' / '200' / '400' / '500' on account-history or outstanding lines, which only covers accounts with movements; loaded when a request filters on type=vat or type=cash, which are therefore best effort);\n- AccountCategory / AccountSubCategory;\n- finally, a Belgian number-prefix fallback (an assumption).\nCustomers and suppliers are Horus 'companies', usually booked on shared concentration accounts (e.g. 400000/440000) with a CompanyId. The chart therefore normally holds general and collective accounts and no per-partner accounts. scheme_ids is always null. The main risks are:\n- type reliability (payable, vat, cash);\n- undocumented SearchKey rules and duplicate behaviour;\n- no delete or renumber endpoint for accounts anywhere in the 72-endpoint reference (D15).\nUnder the shared verdict calibration (D11), both routes are 'workaround'.",
  "verdict": "workaround",
- "verdict_rationale": "Calibrated with the shared verdict scale (D11). Both routes have a native Horus endpoint (accounts.new and accounts.list) for the core fields number, name and active. Read and write capabilities are both documented, so the route is neither 'not_supported' nor 'unknown'. It is not 'supported' under D11 either, because Chift behaviour must be emulated and a field that clients rely on is lost.\n- Create needs extra calls on every request: an exact-match duplicate check on accounts.list, and a GET /accounts.info read-back (with the D13 folder check), because accounts.new returns only the Id. It also drops the Chift type, because Horus has no writable category.\n- The chart needs extra reference endpoints (daybooks.list, and optionally companies.list and account-histories.list or the outstanding endpoints) plus heuristics to compute type. The type filter, page/size and total are emulated in the connector, and scheme_ids has no equivalent.\nBoth routes are therefore 'workaround' (supported with workaround).",
+ "verdict_rationale": "Calibrated with the verdict definitions of section 2 (D11). Both routes have a native Horus endpoint (accounts.new and accounts.list) for the core fields number, name and active, so the routes are neither 'not_supported' nor 'unknown'. They are 'workaround' because of Horus constraints:\n- Create: Horus has no writable category (the accounts.new and accounts.update bodies have no category field), so the Chift type sent on creation is lost and the type returned is computed. This loses a field clients use to classify accounts.\n- Chart: type has no account-level field and is computed from several reference endpoints with heuristics; the type filter, page/size and total are emulated; scheme_ids has no equivalent.\nConnector-chosen safeguards, not reasons for the verdict: the exact-match duplicate check on accounts.list before accounts.new (the guide states 'Each account is identified by a unique search key', but Horus's duplicate error is undocumented) and the GET /accounts.info read-back, which returns the stored state (active, accounting_category if Horus fills it, computed type). Chift's AccountItem requires only number and name, so the response can be built from the request when the read-back fails.",
  "horus_endpoints": [
   {
    "method": "POST",
@@ -31,7 +31,7 @@
   {
    "method": "GET",
    "path": "/accounts.info",
-   "role": "Reads the created account back to build the Chift AccountItem response (active, type, accounting_category), because accounts.new returns only the Id. Cross-folder guard (D13): Data.Folder.Id must equal the resolved FolderId, otherwise return a Chift 400.",
+   "role": "Reads the created account back to build the Chift AccountItem response (active, type, accounting_category), because accounts.new returns only the Id. Cross-folder guard (D13): a Data.Folder.Id different from the resolved FolderId is logged as an alert and the data is not used; the request is not failed, because the account was just created. If the read-back fails (timeout, 404 or 500), the response is built from the request.",
    "pattern": "follow_up",
    "cardinality": "1 per Chift create call (chained on the returned Id)",
    "evidence": "GET /accounts.info PAGE TEXT: 'Get details for a specific account.' 'param[query] Id *'. Response 'Folder: object' {'Type: string [example=\"Folders\"]', 'Id: string'}. Guide: Responses & errors: 'Requests that create or update an entity return only its identifier'."
@@ -63,10 +63,18 @@
   {
    "method": "POST",
    "path": "/account-histories.list",
-   "role": "Optional enrichment for type: entry lines carry a line-level AccountType with AccountSearchKey and Account {Type, Id}. Build the map of distinct accounts per AccountType: 100 → receivable, 200 → payable, 400 → vat, 500 → cash (?). This is the only documented VAT marker tied to an account. It only covers accounts with movements in the chosen period.",
-   "pattern": "optional",
-   "cardinality": "not called by default; at most 1 per folder per cache refresh (period-bound, potentially large; refresh with ModifiedAfter)",
+   "role": "Enrichment for type, loaded when the request filters on type=vat or type=cash (otherwise optional), over the current and previous fiscal year, one call per folder, cached: entry lines carry a line-level AccountType with AccountSearchKey and Account {Type, Id}. Build the map of distinct accounts per AccountType: 100 → receivable, 200 → payable, 400 → vat, 500 → cash (?). This is the only documented VAT marker tied to an account. It only covers accounts with movements in the chosen period.",
+   "pattern": "enrichment",
+   "cardinality": "called only when the request filters on type=vat or type=cash; at most 1 per folder per cache refresh (period-bound, potentially large; refresh with ModifiedAfter)",
    "evidence": "POST /account-histories.list: 'StartMonth *', 'StartYear *', 'EndMonth *', 'EndYear *'; Filter.AccountSearchKeys 'matching the *starts with* clause'; response 'AccountType: number enum[0, 100, 200, 300, 400, 500] // The type of the account history - `0`: Undefined - `100`: CollectCust / Customer - `200`: CollectSup / Supplier - `300`: General - `400`: VAT - `500`: Cash'; 'Account: object|null' {Type 'Accounts', Id}."
+  },
+  {
+   "method": "POST",
+   "path": "/fiscal-years.list",
+   "role": "Gives the bounds of the current and previous fiscal year, used as the period of the line-level AccountType map (account-histories.list). Needed only when that map is loaded.",
+   "pattern": "lookup",
+   "cardinality": "cached reference data (1 per folder), only when the line-level AccountType map is loaded",
+   "evidence": "POST /fiscal-years.list → Data[].StartDate, Data[].EndDate; Guide: Reading accounting data: 'Reference data changes rarely. Load it once and cache it per folder' ... 'Fiscal years and closure dates fiscal-years.list'."
   },
   {
    "method": "POST",
@@ -87,7 +95,7 @@
   {
    "method": "POST",
    "path": "/folders.list",
-   "role": "Matches the Chift folder_id to a Horus FolderId, which every accounts.* call needs, and applies the shared folder rule (D7). When folder_id is missing and no activation selection is stored, use the folder only if Mode 0 returns exactly one; otherwise return 400 'folder_id required'. Folder visibility depends on the connected user's access, and a Horus 403 maps to Chift 400 'folder not accessible with this connection'.",
+   "role": "Matches the Chift folder_id to a Horus FolderId, which every accounts.* call needs, and applies the shared folder rule (D7). When folder_id is missing and no activation selection is stored, use the folder only if Mode 0 returns exactly one; otherwise return 400 'folder_id required'. Folder visibility depends on the connected user's access, and a Horus 403 maps to Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details.",
    "pattern": "lookup",
    "cardinality": "cached per connection: at connection setup (folder selection), and per D7 as the fallback when folder_id is missing and no activation selection is stored",
    "evidence": "POST /folders.list: 'Mode *: number enum[0, 1] // - `0`: All folders - For the accountant: All folders. - For the entrepreneur: All folders to which she/he has access. - `1`: My folders ...'; 'RESPONSE 403: Forbidden – the user/integrator is not allowed to access this resource.' Guide: Reading accounting data: 'Keep the folder Id : it is the FolderId used by nearly every other endpoint.' Guide: Data model: 'A folder is the accounting record of one company: its configuration, chart of accounts, daybooks and entries.'; 'What a user can see through the API depends on their access in Horus.'"
@@ -134,17 +142,17 @@
   }
  ],
  "call_sequence": [
-  "CREATE 0 [cached, connection setup] Resolve FolderId with the shared folder rule (D7):\n- folder_id given: use it;\n- else exactly one folder selected at activation: use that folder;\n- else no selection stored: POST /folders.list {Mode: 0}, and use the folder only if exactly one is returned;\n- otherwise return 400 'folder_id required'.\nA Horus 403 on any folder-scoped call → Chift 400 'folder not accessible with this connection'. Optionally GET /folders.info?Id=... to read Legislation (BE/LU).",
+  "CREATE 0 [cached, connection setup] Resolve FolderId with the shared folder rule (D7):\n- folder_id given: use it (rejected with 400 'folder not selected for this connection' if it is not in the activation selection);\n- else exactly one folder selected at activation: use that folder;\n- else no selection stored: POST /folders.list {Mode: 0}, and use the folder only if exactly one is returned;\n- otherwise return 400 'folder_id required'.\nA Horus 403 on any folder-scoped call → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details. Optionally GET /folders.info?Id=... to read Legislation (BE/LU).",
   "CREATE 1 POST /accounts.list {FolderId, Filter: {SearchKeys: [number]}}. Make this a fresh call, not the cache. The filter is 'starts with', so keep only Data[] where SearchKey == number exactly. If a match exists, return a Chift 400 'account number already exists' and do not call accounts.new (Horus duplicate behaviour is undocumented). Caveat (?): it is undocumented whether accounts.list returns inactive accounts; if it does not, an inactive duplicate escapes this check.",
   "CREATE 2 (optional, A) Validate in the connector: number against the folder Legislation, and requested type against the number prefix. Horus does not document any SearchKey rules.",
-  "CREATE 3 POST /accounts.new {FolderId, SearchKey: number, Heading: name}. type is not sent, because Horus has no field for it. Response: {Id}.\n- Horus 400: re-run the exact-match check of CREATE 1 (a concurrent creation may have happened) and return a Chift 400 with Horus Details.\n- Horus 403: return a Chift 400 'folder not accessible with this connection' (D7), with Horus Details when present. Do not retry.\n- Timeout or Horus 500: never blind-retry, because no idempotency key is documented (same principle as D12). Re-run the exact-match check of CREATE 1 first. If the account now exists with Heading == name, continue to CREATE 4 with its Id. If it exists with another Heading, return a Chift 400 'account number already exists'. If it is absent, retry later with backoff.",
-  "CREATE 4 GET /accounts.info?Id={Id}. Cross-folder guard (D13): Data.Folder.Id must equal FolderId, otherwise return a Chift 400 without an AccountItem. Map SearchKey → number, Heading → name, NOT Inactive → active, and AccountCategory → accounting_category. Compute type with the same cascade as the chart, using the cached daybooks.list map. The line-level AccountType step cannot match a brand-new account, which has no movements.",
+  "CREATE 3 POST /accounts.new {FolderId, SearchKey: number, Heading: name}. type is not sent, because Horus has no field for it. Response: {Id}.\n- Horus 400: re-run the exact-match check of CREATE 1 (a concurrent creation may have happened) and return a Chift 400 with Horus Details.\n- Horus 403: return a Chift 400 'access denied for the connected Horus user (folder or action)' (D7), with the Horus Details when present. Do not retry.\n- Timeout or Horus 500: never blind-retry, because no idempotency key is documented (same principle as D12). Re-run the exact-match check of CREATE 1 first. If the account now exists with Heading == name, continue to CREATE 4 with its Id. If it exists with another Heading, return a Chift 400 'account number already exists'. If it is absent, retry later with backoff.",
+  "CREATE 4 GET /accounts.info?Id={Id}. Cross-folder guard (D13): a Data.Folder.Id different from FolderId on the Id just returned by accounts.new is logged as an alert and the read-back data is not used; the request is not failed, because the account exists. If accounts.info times out or returns 404/500, never re-create: return number and name from the request, active = true and type computed from cached data (or null), log the failure and retry later. Map SearchKey → number, Heading → name, NOT Inactive → active, and AccountCategory → accounting_category. Compute type with the same cascade as the chart, using the cached daybooks.list map. The line-level AccountType step cannot match a brand-new account, which has no movements.",
   "CREATE 5 Invalidate the folder's cached chart of accounts (accounts.list cache and computed types) so the new account appears on the next GET.",
-  "CHART 0 Resolve FolderId with the shared folder rule (D7), as in CREATE 0: folder_id, else the single activation folder, else the single folder from folders.list Mode 0, else 400 'folder_id required'. A Horus 403 → Chift 400 'folder not accessible with this connection'. The resolved FolderId is the cache key for every per-folder cache below.",
+  "CHART 0 Resolve FolderId with the shared folder rule (D7), as in CREATE 0: folder_id (rejected with 400 if it is not in the activation selection), else the single activation folder, else the single folder from folders.list Mode 0, else 400 'folder_id required'. A Horus 403 → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details. The resolved FolderId is the cache key for every per-folder cache below.",
   "CHART 1 [cached per folder] POST /accounts.list {FolderId} with Filter omitted ('omitted or null filters are ignored') and gzip enabled. This returns the full chart; Horus has no paging. Alternative when not caching: send classes.split(',') trimmed as Filter.SearchKeys. Never fill the shared cache from a classes-filtered call.",
   "CHART 2 [cached per folder] POST /daybooks.list {FolderId, Filter: {Types: [500, 550, 590]}}: build a map ConcentrationAccount.Id → bank (500) / other_financial (590) / cash (550, ?: may be null for cash daybooks). There is no sideloading on daybooks.list, so the join to accounts.list Data[].Id is done in the connector.",
   "CHART 3 (optional) [cached per folder] POST /companies.list {FolderId}: build the sets of CustomerConcentrationAccount.Id (receivable) and SupplierConcentrationAccount.Id (payable).",
-  "CHART 4 (optional) [cached per folder] Line-level AccountType map: either POST /customers.outstanding {FolderId} and POST /suppliers.outstanding {FolderId} (light, open items only), or POST /account-histories.list {FolderId, StartMonth/StartYear/EndMonth/EndYear over a recent window (A), Filter: {AccountSearchKeys: ['4','5'] (A, BE classes)}} (heavier, refresh with ModifiedAfter). Keep the distinct AccountSearchKey per AccountType: 100 receivable, 200 payable, 400 vat, 500 cash (?).",
+  "CHART 4 [cached per folder] Line-level AccountType map, loaded when the request filters on type=vat or type=cash (otherwise optional): POST /account-histories.list {FolderId, StartMonth/StartYear/EndMonth/EndYear = current and previous fiscal year (bounds from the cached fiscal-years.list), Filter: {AccountSearchKeys: ['4','5'] (A, BE classes; omitted in LU folders)}}, refreshed with ModifiedAfter. Lighter alternative for receivable and payable only: POST /customers.outstanding {FolderId} and POST /suppliers.outstanding {FolderId} (open items only). Keep the distinct AccountSearchKey per AccountType: 100 receivable, 200 payable, 400 vat, 500 cash (?).",
   "CHART 5 In the connector, for each account in the cached list: apply the classes filter (SearchKey starts with any trimmed class), compute number, name, active, type (cascade) and accounting_category, then apply the Chift type filter if one was given.",
   "CHART 6 In the connector, sort by SearchKey, set total = count after filtering, return items[(page-1)*size : page*size] and echo page and size."
  ],
@@ -165,7 +173,7 @@
    "chift_required": false,
    "horus_source": "POST /accounts.new → FolderId (also POST /accounts.list → FolderId for the duplicate check; POST /folders.list → Data[].Id as the D7 fallback)",
    "classification": "DIRECT",
-   "rule": "[Create] Chift folder_id = Horus Folder Id (GUID from folders.list), sent as FolderId. Shared folder rule (D7):\n- folder_id is required whenever the connection has more than one selected folder;\n- if exactly one folder was selected at activation, use it;\n- if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0};\n- otherwise return 400 'folder_id required'.\nA Horus 403 → Chift 400 'folder not accessible with this connection'.",
+   "rule": "[Create] Chift folder_id = Horus Folder Id (GUID from folders.list), sent as FolderId. Shared folder rule (D7):\n- folder_id is required whenever the connection has more than one selected folder;\n- if exactly one folder was selected at activation, use it;\n- if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0};\n- otherwise return 400 'folder_id required'.\nA Horus 403 → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details. A folder_id outside the activation selection is rejected with 400 'folder not selected for this connection' before any Horus call (D7, Chift FolderItem.selected).",
    "label": "D",
    "evidence": "POST /accounts.new → 'FolderId *: string'; 'RESPONSE 403: Forbidden – the user/integrator is not allowed to access this resource.'; Guide: Data model: 'Almost every endpoint requires a FolderId', 'What a user can see through the API depends on their access in Horus.'; Chift: 'Required when the multiple folders feature is enabled.'"
   },
@@ -175,8 +183,8 @@
    "chift_required": true,
    "horus_source": "POST /accounts.new → Heading",
    "classification": "DIRECT",
-   "rule": "[Create] name → Heading (main-language label). AlternateHeading (label in the folder's AlternateLanguage, D) is left null. Maximum length is undocumented.",
-   "label": "F",
+   "rule": "[Create] name → Heading (main-language label) [F]. AlternateHeading (label in the folder's AlternateLanguage, D) is left null. Maximum length is undocumented.",
+   "label": "D",
    "evidence": "POST /accounts.new → 'Heading *: string [example=\"Fournisseurs particuliers\"]'"
   },
   {
@@ -195,8 +203,8 @@
    "chift_required": false,
    "horus_source": "none",
    "classification": "NA",
-   "rule": "[Create] The documented accounts.new and accounts.update bodies have no category, subcategory or IntCategory input. Drop the value and say so in the connector docs. Optionally (A) reject or warn when type contradicts the number prefix (BE: e.g. type=income with a number starting with 6). Creating a Bank/Financial daybook to make type=bank stick (daybooks.new) is rejected as a side effect. The type in the response is computed from Horus, so it can differ from the request (default 'other').",
-   "label": "F",
+   "rule": "[Create] The documented accounts.new and accounts.update bodies have no category, subcategory or IntCategory input [F]. Drop the value and say so in the connector docs. Optionally (A) reject or warn when type contradicts the number prefix (BE: e.g. type=income with a number starting with 6). Creating a Bank/Financial daybook to make type=bank stick (daybooks.new) is rejected as a side effect. The type in the response is computed from Horus, so it can differ from the request (default 'other').",
+   "label": "A",
    "evidence": "POST /accounts.new body lists only FolderId, SearchKey, Heading, AlternateHeading, HasPersonalShare, PersonalShare; POST /accounts.update lists only AccountId, Heading, AlternateHeading, HasPersonalShare, PersonalShare"
   },
   {
@@ -205,7 +213,7 @@
    "chift_required": true,
    "horus_source": "GET /accounts.info → Data.SearchKey",
    "classification": "DIRECT",
-   "rule": "[Create] SearchKey as returned. The Horus GUID Id is not exposed (AccountItem has no id); keep it internally if needed.",
+   "rule": "[Create] SearchKey as returned (the request number if the read-back fails). The Horus GUID Id is not exposed (AccountItem has no id); keep it internally if needed.",
    "label": "F",
    "evidence": "GET /accounts.info → 'SearchKey: string [example=\"400000\"]'"
   },
@@ -215,7 +223,7 @@
    "chift_required": true,
    "horus_source": "GET /accounts.info → Data.Heading",
    "classification": "DIRECT",
-   "rule": "[Create] Heading.",
+   "rule": "[Create] Heading (the request name if the read-back fails).",
    "label": "F",
    "evidence": "GET /accounts.info → 'Heading: string [example=\"Clients\"]'"
   },
@@ -225,8 +233,8 @@
    "chift_required": false,
    "horus_source": "GET /accounts.info → Data.Inactive",
    "classification": "TRANSFORM",
-   "rule": "[Create] active = NOT Inactive. A new account is expected to be active (A).",
-   "label": "F",
+   "rule": "[Create] active = NOT Inactive [F]. A new account is expected to be active (A); true if the read-back fails.",
+   "label": "A",
    "evidence": "GET /accounts.info → 'Inactive: boolean [example=false]', 'InactiveSince: string|null'"
   },
   {
@@ -235,8 +243,8 @@
    "chift_required": false,
    "horus_source": "GET /accounts.info → IntCategory, AccountCategory, AccountSubCategory + cached POST /daybooks.list → ConcentrationAccount",
    "classification": "COMPOSITE",
-   "rule": "[Create] Use the same cascade as response.items[].type. A freshly created account is not linked to any daybook, has no movements (so the line-level AccountType step cannot match), and Horus may leave AccountCategory empty. The result is therefore often 'other' or comes from the prefix fallback.",
-   "label": "D",
+   "rule": "[Create] Use the same cascade as response.items[].type. A freshly created account is not linked to any daybook, has no movements (so the line-level AccountType step cannot match), and Horus may leave AccountCategory empty. The result is therefore often 'other' or comes from the prefix fallback. If the read-back fails, type is computed from cached data or null.",
+   "label": "A",
    "evidence": "GET /accounts.info → 'IntCategory: string|null [example=\"COLLECCUS\"] // Internal category', 'AccountCategory: number|null', 'AccountSubCategory: number|null'"
   },
   {
@@ -255,7 +263,7 @@
    "chift_required": false,
    "horus_source": "GET /accounts.info → Data.AccountCategory (fallback Data.IntCategory)",
    "classification": "TRANSFORM",
-   "rule": "[Create] Convert the AccountCategory enum code to its documented name (e.g. 900 → 'Expenses'), optionally with the subcategory name (e.g. 'Expenses/EWages'). If AccountCategory is null, use the raw IntCategory; otherwise null. An unknown code is passed through raw.",
+   "rule": "[Create] Convert the AccountCategory enum code to its documented name (e.g. 900 → 'Expenses'), optionally with the subcategory name (e.g. 'Expenses/EWages'). If AccountCategory is null, use the raw IntCategory; otherwise null. An unknown code is passed through raw. Null if the read-back fails.",
    "label": "D",
    "evidence": "GET /accounts.info → 'AccountCategory ... `700`: Income - \"Compte de produit\" ... `900`: Expenses - \"Compte de charge\"'; Chift: 'This is the category of the account as defined in the accounting system.'"
   },
@@ -295,7 +303,7 @@
    "chift_required": false,
    "horus_source": "POST /accounts.list → FolderId (POST /folders.list → Data[].Id as the D7 fallback)",
    "classification": "DIRECT",
-   "rule": "[Chart] Same shared folder rule as for Create (D7). folder_id is required when the connection has more than one selected folder. Otherwise use the single folder selected at activation, else the single folder from POST /folders.list {Mode: 0}, else return 400 'folder_id required'. A Horus 403 → Chift 400 'folder not accessible with this connection'. The resolved FolderId is also the cache key for the chart, daybook and enrichment caches.",
+   "rule": "[Chart] Same shared folder rule as for Create (D7). folder_id is required when the connection has more than one selected folder. Otherwise use the single folder selected at activation, else the single folder from POST /folders.list {Mode: 0}, else return 400 'folder_id required'. A Horus 403 → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details. The resolved FolderId is also the cache key for the chart, daybook and enrichment caches. A folder_id outside the activation selection is rejected with 400 'folder not selected for this connection' before any Horus call (D7, Chift FolderItem.selected).",
    "label": "D",
    "evidence": "POST /accounts.list → 'FolderId *: string'; Guide: Data model: 'What a user can see through the API depends on their access in Horus.'; Chift: 'Required when the multiple folders feature is enabled.'"
   },
@@ -315,8 +323,8 @@
    "chift_required": false,
    "horus_source": "POST /accounts.list (all) + POST /daybooks.list → ConcentrationAccount (+ optional companies.list, account-histories.list / customers.outstanding / suppliers.outstanding → AccountType)",
    "classification": "COMPOSITE",
-   "rule": "[Chart] Emulated filter: compute the type of every account with the cascade below, then keep matches. Allowed values are only bank, cash, income, expense, other_expense and vat.\n- bank = daybook 500 concentration account, else ADispo, else (A) prefix 55.\n- cash = daybook 550 concentration account (?, may be null), else line-level AccountType '500: Cash' (?), else (A) prefix 57.\n- income = AccountCategory 700/800 or subcategory 3000/3010, else prefix 7.\n- expense = AccountCategory 900/1000 minus the other_expense subset.\n- other_expense = subcategories 2300/2400/2990 (A).\n- vat = no account-level marker; line-level AccountType '400: VAT' (D, accounts with movements only), else (A) prefix 411/451.",
-   "label": "D",
+   "rule": "[Chart] Emulated filter: compute the type of every account with the response.items[].type cascade and keep the accounts whose computed type equals the filter (one definition for the field and the filter). Allowed values are only bank, cash, income, expense, other_expense and vat. type=vat and type=cash are best effort, because no account-level Horus field marks VAT or cash accounts. When the request asks for vat or cash, the connector also loads the line-level AccountType map (account-histories.list over the current and previous fiscal year, one call per folder, cached), so accounts with movements are typed by '400: VAT' / '500: Cash' (D). Accounts without movements depend on the BE prefix fallback (A); in LU folders, unused VAT and cash accounts cannot be typed. How an inexact filter is reported follows Chift's answer to the question on filters the target cannot honour.",
+   "label": "A",
    "evidence": "Chift AccountTypeFilter enum ['bank','cash','income','expense','other_expense','vat']; POST /accounts.list Filter has only SearchKeys and Heading (no category filter)"
   },
   {
@@ -345,8 +353,8 @@
    "chift_required": true,
    "horus_source": "POST /accounts.list → Data[].Heading",
    "classification": "DIRECT",
-   "rule": "[Chart] Heading. AlternateHeading is ignored (optionally used when the consumer's language matches the folder AlternateLanguage, A).",
-   "label": "F",
+   "rule": "[Chart] Heading [F]. AlternateHeading is ignored (optionally used when the consumer's language matches the folder AlternateLanguage, A).",
+   "label": "A",
    "evidence": "POST /accounts.list → 'Heading: string [example=\"Clients\"]', 'AlternateHeading: string|null'"
   },
   {
@@ -365,8 +373,8 @@
    "chift_required": false,
    "horus_source": "POST /accounts.list → IntCategory, AccountCategory, AccountSubCategory, Id, SearchKey + POST /daybooks.list → ConcentrationAccount.Id (+ optional POST /companies.list concentration accounts, + optional line-level AccountType from POST /account-histories.list or /customers.outstanding and /suppliers.outstanding)",
    "classification": "COMPOSITE",
-   "rule": "[Chart] Rules are checked in order; the first match wins. Unknown codes at any step mean no conclusion, never an error.\n(1) Id is the ConcentrationAccount.Id of a daybook with Type '500: Bank' → bank; '590: Financial' → other_financial; '550: Cash' → cash (?: daybooks.new cannot create 550 and documents ConcentrationAccountId only for Bank and Financial, so cash daybooks may expose null).\n(2) IntCategory 'COLLECCUS' → receivable. No other code is documented (?), so a supplier collective code or a VAT code must not be hardcoded.\n(3, optional) Id is a company's CustomerConcentrationAccount → receivable, or a SupplierConcentrationAccount → payable.\n(4, optional) Line-level AccountType for this account (SearchKey or Account.Id): '100: CollectCust / Customer' → receivable; '200: CollectSup / Supplier' → payable; '400: VAT' → vat; '500: Cash' → cash (?: the enum has no separate bank value, so 500 may cover all treasury accounts; bank accounts are already caught in step 1); '300: General' → no conclusion. Only accounts with movements or open items are covered.\n(5) AccountSubCategory: '500: ADispo - \"Valeurs disponibles\"' → bank (bank vs cash is ambiguous); '400: AInvest - \"Placements de trésorerie\"' → other_financial; '3000: ITurnOver' / '3010: IOther' → income; '2300: EDepreciation' / '2400: EStock' / '2990: EOther' → other_expense (A, depends on Chift's definition); other E* codes (2000-2250) → expense. '300: ADebtLess', '1600: AReceivableLess' and '1300: LDebtLess' are NOT mapped to receivable/payable, because they also hold VAT, wages and other receivables or debts.\n(6) AccountCategory: '700: Income' and '800: DiscInc' → income; '900: Expenses' and '1000: DiscExp' → expense; '1200: CostInc' / '1300: CostExp' (analytic) → income/expense, ambiguous; '0: Undefined', '100: Assets', '200: FxCostPrep', '300: FxIncorp', '400: FxCorp', '500: FxFinance', '600: Liability' and '1100: Prov' → other.\n(7) Fallback for Legislation BE only (A, general knowledge of the Belgian PCMN chart): prefix 400-409 → receivable, 440-449 → payable, 411 or 451 → vat, 55 → bank, 57 → cash, 6 → expense, 7 → income. Otherwise → other. LU needs its own table.",
-   "label": "D",
+   "rule": "[Chart] Label A (weakest step): steps (1) and (2) rest on documented fields; steps (3) to (6) are deductions, with assumed mappings marked inline; step (7) is an assumption from general knowledge of the Belgian chart, applied only when Legislation is BE. Rules are checked in order; the first match wins. Unknown codes at any step mean no conclusion, never an error.\n(1) Id is the ConcentrationAccount.Id of a daybook with Type '500: Bank' → bank; '590: Financial' → other_financial; '550: Cash' → cash (?: daybooks.new cannot create 550 and documents ConcentrationAccountId only for Bank and Financial, so cash daybooks may expose null).\n(2) IntCategory 'COLLECCUS' → receivable. No other code is documented (?), so a supplier collective code or a VAT code must not be hardcoded.\n(3, optional) Id is a company's CustomerConcentrationAccount → receivable, or a SupplierConcentrationAccount → payable.\n(4) Line-level AccountType for this account (SearchKey or Account.Id), when the per-folder map is loaded (always for a type=vat or type=cash filter, otherwise optional): '100: CollectCust / Customer' → receivable; '200: CollectSup / Supplier' → payable; '400: VAT' → vat; '500: Cash' → cash (?: the enum has no separate bank value, so 500 may cover all treasury accounts; bank accounts are already caught in step 1); '300: General' → no conclusion. Only accounts with movements or open items are covered.\n(5) AccountSubCategory: '500: ADispo - \"Valeurs disponibles\"' → in a BE folder by prefix (55 → bank, 57 → cash, otherwise bank), elsewhere bank; '400: AInvest' → other_financial; '3000: ITurnOver' / '3010: IOther' → income; '2300: EDepreciation' / '2400: EStock' / '2990: EOther' → other_expense (A, depends on Chift's definition); other E* codes (2000-2250) → expense. '300: ADebtLess', '1600: AReceivableLess' and '1300: LDebtLess' → no conclusion (they also hold VAT, wages and other receivables or debts).\n(6) AccountCategory: '700: Income' and '800: DiscInc' → income; '900: Expenses' and '1000: DiscExp' → expense; '1200: CostInc' / '1300: CostExp' → income/expense, ambiguous; balance-sheet categories ('0', '100' to '600', '1100') → no conclusion, so the account falls through to step 7.\n(7) Fallback for Legislation BE only (A, general knowledge of the Belgian PCMN chart): prefix 400-409 → receivable, 440-449 → payable, 411 or 451 → vat, 55 → bank, 57 → cash, 6 → expense, 7 → income. Otherwise (including LU, which has no prefix table) → other.",
+   "label": "A",
    "evidence": "POST /accounts.list → 'IntCategory: string|null [example=\"COLLECCUS\"] // Internal category'; example item SearchKey '400000', Heading 'Clients', IntCategory 'COLLECCUS', AccountCategory null; POST /daybooks.list → 'ConcentrationAccount: object|null'; POST /account-histories.list → 'AccountType ... `100`: CollectCust / Customer - `200`: CollectSup / Supplier - `300`: General - `400`: VAT - `500`: Cash'"
   },
   {
@@ -442,8 +450,8 @@
    "label": "D"
   },
   {
-   "horus_field": "POST /account-histories.list → StartMonth / StartYear / EndMonth / EndYear (only if the optional AccountType enrichment is used)",
-   "how_to_fill": "No Chift source (the chart has no period). The connector picks a fixed recent window, e.g. the last 12 months or the current fiscal year, and refreshes it with ModifiedAfter. The window choice is a connector decision to validate.",
+   "horus_field": "POST /account-histories.list → StartMonth / StartYear / EndMonth / EndYear (only when the line-level AccountType map is loaded)",
+   "how_to_fill": "No Chift source (the chart has no period). The connector uses the current and previous fiscal year (bounds from the cached fiscal-years.list) and refreshes with ModifiedAfter. The window choice is a connector decision to validate.",
    "label": "A"
   },
   {
@@ -470,12 +478,12 @@
   },
   {
    "description": "type has no account-level Horus field. It must be computed from several fields and endpoints: daybooks.list concentration accounts, IntCategory, optional company concentration accounts, optional line-level AccountType, and AccountCategory/SubCategory, with a number-prefix fallback. Only 'COLLECCUS' is documented for IntCategory, and no account field marks VAT or payable accounts. The line-level AccountType ('200: CollectSup / Supplier', '400: VAT', '500: Cash' on account-history and outstanding lines) does mark them, but only for accounts with movements.",
-   "impact": "Extra cached calls plus heuristics. Accounts without movements (new or unused VAT, supplier and cash accounts) still depend on the prefix fallback (A). The cash and bank split remains uncertain.",
+   "impact": "Extra cached calls plus heuristics. type=vat and type=cash are best effort: accounts without movements (new or unused VAT, supplier and cash accounts) depend on the BE prefix fallback (A), and LU folders have no prefix table. The cash and bank split remains uncertain.",
    "label": "D"
   },
   {
    "description": "accounts.list has no pagination and no category filter.",
-   "impact": "Each Chift page needs the full list (cache per folder, as the guide recommends). The type filter, total and paging are emulated in the connector; performance is fine for normal chart sizes.",
+   "impact": "Each Chift page needs the full list (cache per folder, as the guide recommends). The type filter, total and paging are emulated in the connector; this is expected to be fine for typical chart sizes; behaviour on very large charts is unverified (H5).",
    "label": "D"
   },
   {
@@ -514,8 +522,8 @@
    "label": "?"
   },
   {
-   "description": "Horus 403 is generic: 'the user/integrator is not allowed to access this resource'. The shared folder rule (D7) maps every Horus 403 to Chift 400 'folder not accessible with this connection'. The documentation does not say whether a 403 on accounts.new can also mean that the user sees the folder but may not create accounts.",
-   "impact": "On a write refused for lack of rights, the Chift message can point at folder access when the real cause is a missing right. Pass Horus Details along when a body is returned. The guide says 'Except for authorization errors, errors return an object with three fields', so a body may be missing.",
+   "description": "Horus 403 is generic: 'the user/integrator is not allowed to access this resource'. The shared folder rule (D7) maps every Horus 403 to Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details. The documentation does not say whether a 403 on accounts.new can also mean that the user sees the folder but may not create accounts.",
+   "impact": "The Chift message cannot say which of the two causes applies. Pass the Horus Details along when a body is returned. The guide says 'Except for authorization errors, errors return an object with three fields', so a body may be missing.",
    "label": "D"
   }
  ],
@@ -552,7 +560,7 @@
   },
   {
    "case": "User not allowed to create accounts or to access the folder (e.g. an entrepreneur on Horus Mobile with limited access)",
-   "handling": "Map a Horus 403 to Chift 400 'folder not accessible with this connection' (D7), passing Horus Details when present; no retry. A Horus 403 does not say whether folder access or the create right is missing (open question).",
+   "handling": "Map a Horus 403 to Chift 400 'access denied for the connected Horus user (folder or action)' (D7), passing the Horus Details when present; no retry. A Horus 403 does not say whether folder access or the create right is missing (open question).",
    "label": "D"
   },
   {
@@ -562,7 +570,12 @@
   },
   {
    "case": "accounts.info read-back returns a Data.Folder.Id different from the resolved FolderId",
-   "handling": "Cross-folder guard (D13): return a Chift 400 and do not return the AccountItem. This is not expected, because the Id comes from accounts.new in the same folder, but the guard is applied on every Id-only call.",
+   "handling": "Log an alert and build the response from the request (number, name, active = true, computed type); do not return an error, because the account was created in this call. Not expected, but the guard runs on every Id-only call (D13).",
+   "label": "D"
+  },
+  {
+   "case": "accounts.info read-back fails after a successful accounts.new (timeout, 404 or 500)",
+   "handling": "Never re-create. Return number and name from the request, active = true and type computed from cached data or null (AccountItem requires only number and name); log the failure and retry the read-back later. Otherwise a client retry would get 'account number already exists' for the account its own first call created.",
    "label": "D"
   },
   {
@@ -626,6 +639,11 @@
    "label": "D"
   },
   {
+   "case": "type=vat or type=cash filter",
+   "handling": "Best effort. Load the line-level AccountType map once per folder (account-histories.list over the current and previous fiscal year, cached), so accounts with movements are typed by '400: VAT' / '500: Cash'. Accounts without movements depend on the BE prefix fallback; in LU folders they are not found. How an inexact filter is reported follows Chift's answer to the question on filters the target cannot honour.",
+   "label": "A"
+  },
+  {
    "case": "page beyond the last page",
    "handling": "Return items=[] with the correct total.",
    "label": "D"
@@ -643,7 +661,7 @@
  ],
  "open_questions": [
   {
-   "question": "What is the full list of IntCategory values (only 'COLLECCUS' is documented)? In particular, which codes mark the supplier collective, VAT recoverable/payable, bank and cash accounts?",
+   "question": "What is the full list of IntCategory values (only 'COLLECCUS' is documented)? In particular, which codes mark the supplier collective, VAT recoverable/payable, bank and cash accounts? Is AccountCategory always filled for balance-sheet accounts?",
    "for_whom": "Horus",
    "why": "IntCategory would be the most reliable account-level source for receivable, payable, vat, bank and cash. Without it, accounts without movements fall back to number-prefix heuristics."
   },
@@ -700,17 +718,17 @@
   {
    "question": "Does a 403 on accounts.new or accounts.list distinguish 'no access to the folder' from 'not allowed to create or read accounts' (for example through ErrorType), and does a 403 response carry an error body at all?",
    "for_whom": "Horus",
-   "why": "The shared folder rule (D7) maps every Horus 403 to Chift 400 'folder not accessible with this connection'. If the user can see the folder but lacks the create right, that message misleads the client."
+   "why": "The shared folder rule (D7) maps every Horus 403 to Chift 400 'access denied for the connected Horus user (folder or action)'. Telling the two causes apart would give the client a precise message."
   },
   {
-   "question": "What exactly do other_expense and other_financial mean, and should ADispo/AInvest/EDepreciation/EOther map to them?",
+   "question": "What exactly do other_expense and other_financial mean, and should ADispo/AInvest/EDepreciation/EOther map to them? When no documented source types an account, is 'other' (or null) preferred to a number-prefix guess?",
    "for_whom": "Chift",
-   "why": "The Horus subcategories need a clear target. other_expense and other_financial have no description in the Chift spec."
+   "why": "The Horus subcategories need a clear target. other_expense and other_financial have no description in the Chift spec. Consumers pick bank or VAT accounts by type, so a wrong guess has business effect."
   },
   {
    "question": "When the requested type cannot be persisted, should the connector ignore it silently, warn, or reject? Should type=bank ever trigger the creation of a Bank daybook (daybooks.new with ConcentrationAccountId)?",
    "for_whom": "Chift",
-   "why": "Create would otherwise return a type that differs from the request. Creating a daybook is a side effect the client did not ask for."
+   "why": "Create would otherwise return a type that differs from the request. Creating a daybook is a side effect the client did not ask for. (Consolidated in section 9 under C3.)"
   },
   {
    "question": "Is null acceptable for scheme_ids, and should accounting_category hold the Horus enum name, the numeric code, or category/subcategory combined?",
@@ -723,9 +741,19 @@
    "why": "Unified-model scope decision."
   },
   {
-   "question": "Is the extra cost of the optional type enrichment (account-histories.list or the outstanding endpoints) acceptable, or should type rely on reference data and prefixes only?",
+   "question": "Is the cost of the line-level type enrichment acceptable (one account-histories.list call per folder over the current and previous fiscal year, cached; made when a request filters on type=vat or type=cash), and should it also run for unfiltered chart reads, so that every item type uses it?",
    "for_whom": "Chift",
-   "why": "It improves payable, vat and cash typing, but adds period-bound calls with no Chift parameter to scope them."
+   "why": "It improves payable, vat and cash typing for accounts with movements, but adds a period-bound call with no Chift parameter to scope it. Without it on unfiltered reads, an account can be typed vat in a filtered read and other in an unfiltered one."
+  },
+  {
+   "question": "Does Chift core retry create calls automatically after a 5xx or timeout? May a ledger-account response be built from the request (number, name, active = true, type computed or null) when the read-back fails?",
+   "for_whom": "Chift",
+   "why": "After a successful accounts.new the connector returns the account rather than an error, so that a retry does not hit 'account number already exists'."
+  },
+  {
+   "question": "Is GET /accounts.info immediately consistent after accounts.new returns its Id?",
+   "for_whom": "Horus",
+   "why": "The read-back runs immediately after the create."
   }
  ],
  "evidence_gaps": [
@@ -743,7 +771,7 @@
   "Guide: Changes & versioning lists 'adding new properties to existing API responses' as a change made without notice, but says nothing about adding new enum values. Tolerating unknown codes is a defensive choice, not a documented rule.",
   "No idempotency key or duplicate-safe retry is documented for accounts.new. Guide: Responses & errors only says '500 : retry later with exponential backoff', so the check-before-retry rule is a connector decision (D).",
   "The 403 status is documented only generically ('the user/integrator is not allowed to access this resource'). No ErrorType values separate folder access from action rights, and the guide says 'Except for authorization errors, errors return an object with three fields'.",
-  "Not provided: Quickstart, Register your integration, Support & FAQ and Changelog pages, the Postman collection, and the tax-combination spreadsheets. Nothing in the admissible sources fills the gaps above.",
+  "Not provided: Quickstart, Register your integration, Support & FAQ and Changelog pages, and the Postman collection. Nothing in the admissible sources fills the gaps above.",
   "No admissible source describes Luxembourg chart constraints. The Belgian prefix table used as fallback is general accounting knowledge, not Horus documentation."
  ],
  "ba_insights": [
@@ -754,8 +782,8 @@
   "number = SearchKey is the join key across the whole connector. Every Horus posting endpoint references accounts by 'The account's search key', so the Chift number can be passed as-is in invoice and entry lines. The GUID Id is needed for accounts.info and for relationship objects ({Type:'Accounts', Id}) such as daybook and company concentration accounts. accounts.list and daybooks.list do not support sideloading, so these joins are done in the connector. Keep an Id ↔ SearchKey map per folder. The same per-folder chart cache also lets the shared partner mapper (D9) resolve CustomerConcentrationAccount / SupplierConcentrationAccount to the account SearchKey for account_number.",
   "Create is asymmetric. Horus takes only SearchKey and Heading and returns only an Id, so the connector does a check, a create and a read-back (3 calls). The type the client sent can come back different. Explain this clearly to the client.",
   "Write carefully. None of the 72 endpoints in the Horus reference (D15) is an accounts.delete, and none can change a SearchKey, so a wrong account number created through Chift needs manual cleanup in Horus Office. Hence:\n- the duplicate check, with a re-check on a Horus 400 in case of a race;\n- the check-before-retry on a timeout or 500, since no idempotency key exists (same principle as D12);\n- the number validation;\n- the guide's advice to use a test folder for .new/.update calls.",
-  "One folder rule for every route (D7). A Horus folder is one company's books, and a fiduciary license holds many, so the FolderId required by accounts.new, accounts.list and daybooks.list cannot be guessed.\n- folder_id is required when the connection has more than one selected folder.\n- A single folder selected at activation is the default.\n- With no stored selection, a call without folder_id works only when folders.list Mode 0 shows exactly one folder.\n- A Horus 403 becomes Chift 400 'folder not accessible with this connection'.\nThe resolved folder is also the cache key for the chart, daybook and enrichment caches. Id-only reads (accounts.info) are checked against it (D13).",
-  "Why 'workaround' and not 'supported' (D11). The core fields map natively, but the create needs a duplicate check and a read-back on every call, the chart emulates the type filter and pagination, and the Chift type (a field clients use to classify accounts) cannot be written and is only computed on read.",
+  "One folder rule for every route (D7). A Horus folder is one company's books, and a fiduciary license holds many, so the FolderId required by accounts.new, accounts.list and daybooks.list cannot be guessed.\n- folder_id is required when the connection has more than one selected folder, and a folder_id outside the activation selection is rejected with 400 'folder not selected for this connection'.\n- A single folder selected at activation is the default.\n- With no stored selection, a call without folder_id works only when folders.list Mode 0 shows exactly one folder.\n- A Horus 403 becomes Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details.\nThe resolved folder is also the cache key for the chart, daybook and enrichment caches. Id-only reads (accounts.info) are checked against it (D13); on the Id just created, a mismatch is an alert, not an error.",
+  "Why 'workaround' and not 'supported' (D11). The core fields map natively, but the Chift type (a field clients use to classify accounts) cannot be written and is only computed on read, and the chart emulates the type filter and pagination. The duplicate check and the read-back on create are safeguards chosen by the connector, not Horus constraints.",
   "Filter and cache strategy. The guide says to load the chart once and cache it per folder, and pagination must be emulated anyway. So the best pattern is to fetch the full accounts.list without Filter (gzip on) and apply classes as a starts-with prefix, then the type filter and paging, in the connector. Sending classes as SearchKeys is only for an uncached call; never store a filtered result as the folder cache. classes works because BE/LU charts are class-based (general knowledge: the first digit is the class).",
   "Label your heuristics honestly. The number-prefix fallback (400 receivable, 440 payable, 411/451 VAT, 55 bank, 57 cash, 6 expense, 7 income) comes from general knowledge of the Belgian PCMN chart, not from Horus docs. It is an assumption (A), comes after every documented source, and applies only when folders.info Legislation is 'BE'.",
   "account-balance.list looks tempting for listing accounts (IncludeUnusedAccounts), but it is a period-bound trial balance with no Inactive or category fields. It belongs to balance or trial-balance routes, not to the chart of accounts."

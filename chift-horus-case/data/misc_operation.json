@@ -6,12 +6,12 @@
    "chift_path": "/consumers/{consumer_id}/accounting/miscellaneous-operation",
    "chift_name": "Create miscellaneous operation",
    "verdict": "workaround",
-   "one_line": "Workaround (D11): native endpoint, but EUR-only and numeric operation numbers only. Maps to POST /book-entries.miscellaneous-operations.new, which posts an OD into a daybook of Type 600, the only type auto-selected and validated (D6). Each signed Chift amount is split into Debit/Credit and the line type becomes Type 1/2/3. Extra calls: per-folder daybook and analytics caches (D8), a fiscal-years.list + book-entries.list Filter.DocumentNo duplicate pre-check whenever operation_number is supplied (D12), and a GET /book-entries.info read-back (Folder.Id checked, D13) when Horus generates the number. line_number is not stored (array order only), and 'posted' entries (Confirmed=true unless the per-consumer 'always push unconfirmed' setting is on) cannot be deleted through the API."
+   "one_line": "Workaround (D11): native endpoint, but amounts are stored in EUR only (foreign-currency operations converted at the supplied rate) and operation numbers must be numeric. Maps to POST /book-entries.miscellaneous-operations.new, which posts an OD into a daybook of Type 600, the only type auto-selected and validated (D6). Each signed Chift amount is split into Debit/Credit and the line type becomes Type 1/2/3. Extra calls: per-folder daybook and analytics caches (D8), a fiscal-years.list closure check before every create (closure dates read fresh), a book-entries.list Filter.DocumentNo duplicate pre-check whenever operation_number is supplied (D12; its fiscal-year period comes from the closure-check call), and a GET /book-entries.info read-back (Folder.Id checked, D13) when Horus generates the number. Lines are sent in line_number order. Entries confirmed in Horus (direct posting mode, D12) cannot be deleted through the API."
   }
  ],
- "summary": "Chift 'Create miscellaneous operation' maps onto the dedicated Horus POST /book-entries.miscellaneous-operations.new (\"Insert a miscellaneous operation (OD). The result will contain the generated book entry's id.\"), posted as application/json into a daybook of Type 600 (MiscOperation), the only daybook type this route auto-selects or accepts (D6). The payload needs only deterministic transformations: each signed Chift amount becomes the non-negative Debit/Credit columns (positive = Credit), the line type becomes Type 1/2/3, partner_id becomes CompanyId on customer/supplier lines, status becomes Confirmed (posted → true unless the per-consumer 'always push unconfirmed' setting is on, D12) plus AutoGenerateNumber when a confirmed operation has no number, the date gets a time and offset, and analytic_account (a cost-section GUID) becomes one CostLine whose schema and section search keys come from the per-folder analytics cache (D8). The call pattern is: resolve the folder (D7) and the cached reference data (daybooks.list; cost-schemas.list + cost-sections.list with IncludeInactive=true; optional accounts/companies checks with Folder.Id guards, D13); when operation_number is supplied, get the fiscal-year period from fiscal-years.list and run a book-entries.list Filter.DocumentNo duplicate pre-check (D12); post; then, only when Horus generated the number or the stored state must be confirmed, read back with GET /book-entries.info?Id= and check its Folder.Id (D13). The verdict is workaround under D11: non-EUR operations (no currency field) and non-numeric operation numbers cannot be posted, line_number is not stored, and extra per-request calls are needed. Other risks: Horus refuses unbalanced ODs and has no AllowUnbalanced option on this endpoint, Chift's default 'posted' sets Confirmed=true which removes the API delete option, updates create a new book-entry Id, and there is no idempotency key, so a timeout must be followed by a duplicate check and never by a blind retry.",
+ "summary": "Chift 'Create miscellaneous operation' maps onto the dedicated Horus POST /book-entries.miscellaneous-operations.new (\"Insert a miscellaneous operation (OD). The result will contain the generated book entry's id.\"), posted as application/json into a daybook of Type 600 (MiscOperation), the only daybook type this route auto-selects or accepts (D6). The payload needs only deterministic transformations: each signed Chift amount, normalised once (converted to EUR at the supplied rate when the operation is in another currency, then rounded to 2 decimals), becomes the non-negative Debit/Credit columns (positive = Credit), the line type becomes Type 1/2/3, partner_id becomes CompanyId on customer/supplier lines, status becomes Confirmed according to the per-connection posting mode (D12: review mode, the proposed default, pushes every operation unconfirmed; direct mode confirms 'posted' operations) plus AutoGenerateNumber when a confirmed operation has no number, the date gets a time and offset, and analytic_account (a cost-section GUID) becomes one CostLine whose schema and section search keys come from the per-folder analytics cache (D8). The call pattern is: resolve the folder (D7) and the cached reference data (daybooks.list; cost-schemas.list + cost-sections.list with IncludeInactive=true; optional accounts/companies checks with Folder.Id guards, D13); check the closure dates with a fresh fiscal-years.list call, as Horus recommends; when operation_number is supplied, run a book-entries.list Filter.DocumentNo duplicate pre-check over that fiscal year (D12); post; then, only when Horus generated the number, read back with GET /book-entries.info?Id= and check its Folder.Id (D13). The verdict is workaround under D11: amounts are stored in EUR only (foreign-currency operations are converted at the supplied rate and the original currency is not kept), operation numbers must be numeric, and returning a Horus-generated number needs a read-back. The duplicate pre-check on a supplied number is a connector safeguard, and the line order is preserved. Other risks: Horus refuses unbalanced ODs and has no AllowUnbalanced option on this endpoint, in direct mode a 'posted' operation is confirmed and can no longer be deleted through the API, updates create a new book-entry Id, and there is no idempotency key, so a timeout must be followed by a best-effort duplicate check and never by a blind retry.",
  "verdict": "workaround",
- "verdict_rationale": "Supported with workaround, under the D11 calibration. Horus has a native write endpoint built for this business object: an OD in a MiscOperation daybook, Type 600 (Guide: Data model table \"Miscellaneous operation 600 book-entries.miscellaneous-operations.new\"), and every required Chift field maps with a deterministic transformation: amount sign → Debit/Credit, type enum → Type, date → date-time, status → Confirmed.\n\nIt is not 'supported', because D11 reserves that verdict for routes where nothing is emulated and only minor optional fields are lost. This route misses that bar on four counts:\n- Currency: the misc-op schema has no CurrencyCode/CurrencyRate (D: unlike the invoice endpoints), so non-EUR operations cannot be posted at all and are rejected. For a client with multi-currency ODs, the route behaves as not_supported for those operations, and this must be stated explicitly to clients.\n- Numbering: Horus Number is numeric (\"Number *: number\"), so alphanumeric operation_number values are refused and leading zeros are lost.\n- line_number: there is no writable line-number field. Only the array order is conveyed (A: assumed stored as OrderNo), so the Chift value itself is dropped.\n- Extra per-request calls: create returns only an Id, so a GET /book-entries.info read-back is needed when Horus generates the number. D12 also adds a fiscal-years.list + book-entries.list (Filter.DocumentNo) duplicate pre-check whenever operation_number is supplied.\n\nThe reference lookups (daybooks, cost schemas and sections, D8) are cached per folder and would not justify the downgrade on their own. partner_id on a general_account line is dropped too, but it has no accounting meaning there (Guide: CompanyId \"Not used\" for Type 3).",
+ "verdict_rationale": "Supported with workaround, under the verdict definitions of section 2 (D11). Horus has a native write endpoint built for this business object: an OD in a MiscOperation daybook, Type 600 (Guide: Data model table \"Miscellaneous operation 600 book-entries.miscellaneous-operations.new\"), and every required Chift field maps with a deterministic transformation: amount sign → Debit/Credit, type enum → Type, date → date-time, status → Confirmed (D12).\n\nIt is not 'supported' because of constraints Horus imposes:\n- Currency: the misc-op body has no currency or rate field (D), so amounts are stored in EUR. Foreign-currency operations are converted at the supplied rate (by Chift core or by the connector; question to Chift) and the original currency is not kept in Horus.\n- Numbering: Horus Number is numeric (\"Number *: number\"), so alphanumeric operation_number values cannot be stored as the entry number (handling: question C7).\n- Read-back: create returns only an Id (Guide: Responses & errors \"Requests that create or update an entity return only its identifier\"), so returning a Horus-generated number (AutoGenerateNumber, available only with Confirmed=true) costs one GET /book-entries.info call.\n\nConnector-chosen safeguards, not reasons for the verdict: the closure-date check on fiscal-years.list before every create (Guide: Data model \"Before pushing entries, check the relevant closure dates with fiscal-years.list\"), the D12 duplicate pre-check on book-entries.list when operation_number is supplied (Horus documents no idempotency key) and the optional account and partner pre-validations. Reference data (daybooks, cost schemas and sections) is cached per folder.\n\nNot a loss: line_number. Chift uses it only to order the lines (\"This is used to order the lines in the operation\"); the connector sends the lines in that order and echoes the values in the response. Whether Horus stores the array order as OrderNo is to confirm (A). partner_id on a general_account line is dropped, but it has no accounting meaning there (Guide: CompanyId \"Not used\" for Type 3).",
  "horus_endpoints": [
   {
    "method": "POST",
@@ -88,15 +88,15 @@
   {
    "method": "POST",
    "path": "/fiscal-years.list",
-   "role": "Called with Filter.Dates=[operation_date] and Filter.IncludeFuture=true, for two uses. (a) Required whenever operation_number is supplied (D12): the StartDate/EndDate of the fiscal year containing operation_date give the StartMonth/StartYear/EndMonth/EndYear period of the book-entries.list duplicate pre-check. (b) Optional closed-period pre-check: a fiscal year should contain operation_date, and the date should fall strictly after LastMiscOperationsClosureDate. The comparison rule is a deduction (D), and the field is an untyped string|null, so it must be parsed defensively. The connector can then refuse or warn cleanly instead of relying on an undocumented Horus error.",
+   "role": "Called before every create with Filter.Dates=[operation_date] and Filter.IncludeFuture=true, for two uses. (a) Closed-period pre-check, run before every create, as Horus recommends ('Before pushing entries, check the relevant closure dates with fiscal-years.list'): a fiscal year must contain operation_date, and the date must fall strictly after LastMiscOperationsClosureDate. Whether LastVatClosureDate also blocks miscellaneous operations is undocumented (open point). (b) When operation_number is supplied, the StartDate/EndDate of that fiscal year give the StartMonth/StartYear/EndMonth/EndYear period of the book-entries.list duplicate pre-check (D12). The comparison rule is a deduction (D), and the field is an untyped string|null, so it must be parsed defensively. The connector can then refuse or warn cleanly instead of relying on an undocumented Horus error. Closure dates are read fresh at each create, not from the reference cache, because the accountant can close a period at any time.",
    "pattern": "lookup",
-   "cardinality": "0-1 per Chift call (required when operation_number is supplied; cacheable per folder)",
-   "evidence": "POST /fiscal-years.list → Filter.Dates: \"Filters on fiscal years encapsulating the dates\"; Filter.IncludeFuture: \"*FALSE* by default\"; Data[].StartDate: string(date-time) [example=\"2017-01-01T00:00:00+00:00\"]; Data[].EndDate: string(date-time) [example=\"2017-12-31T23:59:59+00:00\"]; Data[].LastMiscOperationsClosureDate: string|null; Guide: Data model \"Before pushing entries, check the relevant closure dates with fiscal-years.list to avoid posting into a period that has already been closed by the accountant.\""
+   "cardinality": "1 per Chift call (closure fields are read fresh, not cached)",
+   "evidence": "POST /fiscal-years.list → Filter.Dates: \"Filters on fiscal years encapsulating the dates\"; Filter.IncludeFuture: \"*FALSE* by default\"; Data[].StartDate: string(date-time) [example=\"2017-01-01T00:00:00+00:00\"]; Data[].EndDate: string(date-time) [example=\"2017-12-31T23:59:59+00:00\"]; Data[].LastMiscOperationsClosureDate: string|null; Data[].LastVatClosureDate: string|null; Guide: Data model \"Before pushing entries, check the relevant closure dates with fiscal-years.list to avoid posting into a period that has already been closed by the accountant.\""
   },
   {
    "method": "GET",
    "path": "/fiscal-years.info",
-   "role": "Optional: IsClosed flag, which only the .info variant returns.",
+   "role": "Optional: IsClosed flag, which only the .info variant returns. A fiscal year found closed can be cached.",
    "pattern": "optional",
    "cardinality": "0-1 per Chift call (cacheable)",
    "evidence": "GET /fiscal-years.info → Data.IsClosed: boolean"
@@ -104,7 +104,7 @@
   {
    "method": "POST",
    "path": "/accounts.list",
-   "role": "Optional pre-validation that every account_number exists as an account SearchKey. The filter is starts-with, so match exactly on the client side. Exposes Inactive and IsSummary flags (posting rule for them undocumented). Also resolves account Ids (e.g. a company's concentration account) to SearchKeys from the cache.",
+   "role": "Optional pre-validation that every account_number exists as an account SearchKey. The filter is starts-with, so match exactly on the client side. Exposes Inactive and IsSummary flags (posting rule for them undocumented). Also resolves account Ids (e.g. a company's concentration account) to SearchKeys from the cache, and flags general_account lines posted on a customer or supplier concentration account (IntCategory 'COLLECCUS', or a concentration account from companies.list).",
    "pattern": "optional",
    "cardinality": "1 per Chift call with SearchKeys array (or cached chart of accounts)",
    "evidence": "POST /accounts.list → Filter.SearchKeys: \"Filters on search keys matching the *starts with* clause\"; Data[].Id, Data[].SearchKey, Data[].Inactive, Data[].IsSummary; Guide: Data model \"Each account is identified by a unique search key, which is usually the account number\""
@@ -122,15 +122,15 @@
    "path": "/users.me",
    "role": "Optional, at connection setup: detect whether the authorising user is an accountant (IsAccountant) or an entrepreneur, to anticipate permission errors (403) when posting or confirming entries.",
    "pattern": "optional",
-   "cardinality": "once per connection (cached)",
+   "cardinality": "0 for this route (connection setup: once per connection, cached)",
    "evidence": "GET /users.me → Data.IsAccountant: boolean; Guide: Data model \"Users are either accountants using Horus Office ( IsAccountant: true ) or entrepreneurs using Horus Mobile. What a user can see through the API depends on their access in Horus.\""
   },
   {
    "method": "GET",
    "path": "/book-entries.info",
-   "role": "Primary read-back after creation. Takes only the Id returned by .new, with no FolderId, DaybookId or period. Returns DocumentNo (the generated number when AutoGenerateNumber was sent), Confirmed, Date, Daybook.Id, Folder.Id and the AccountHistories line references (Type/Id only, no accounts or amounts). Cross-folder guard (D13): the read-back is accepted only if Data.Folder.Id == FolderId (and Data.Daybook.Id == the DaybookId used). Used when AutoGenerateNumber was sent, or when the response must reflect what Horus stored at entry level. It is not in the guide's list of sideloading endpoints, so line content needs account-histories.list or account-histories.info. It cannot serve the duplicate check after a lost POST response, because the Id is then unknown.",
+   "role": "Primary read-back after creation. Takes only the Id returned by .new, with no FolderId, DaybookId or period. Returns DocumentNo (the generated number when AutoGenerateNumber was sent), Confirmed, Date, Daybook.Id, Folder.Id and the AccountHistories line references (Type/Id only, no accounts or amounts). Cross-folder guard (D13): Data.Folder.Id must equal FolderId (and Data.Daybook.Id the DaybookId used); on an Id this call has just created, a mismatch is logged as an alert and the data is not used, but the request is not failed, because the operation exists. Used only when AutoGenerateNumber was sent. If the read-back fails (timeout, 404 or 500), the response is built from the request and the read-back is retried later. It is not in the guide's list of sideloading endpoints, so line content needs account-histories.list or account-histories.info. It cannot serve the duplicate check after a lost POST response, because the Id is then unknown.",
    "pattern": "follow_up",
-   "cardinality": "0-1 per Chift call (only if the number is auto-generated or the stored state must be confirmed)",
+   "cardinality": "0-1 per Chift call (only when Horus generated the number)",
    "evidence": "PAGE TEXT: \"Get details for a specific book entry.\" param[query] Id *; Data.DocumentNo: number [example=1904001]; Data.Confirmed: boolean; Data.Date: string(date-time); Data.Daybook {Type: \"Daybooks\", Id}; Data.Folder {Type: \"Folders\", Id}; Data.AccountHistories: array[object] {Type: \"AccountHistories\", Id}; Guide: Reading accounting data \"Use book-entries.info to get the full detail of one entry.\"; Guide: Sideloading \"Sideloading is currently supported on:\" book-entries.list, account-histories.list, companies.list, invoices.sales.outstanding.list (book-entries.info not listed)"
   },
   {
@@ -162,7 +162,7 @@
    "path": "/book-entries.miscellaneous-operations.delete",
    "role": "Not part of the nominal flow. Possible compensation (for example, a draft created by mistake). Works only on unconfirmed entries created through the API.",
    "pattern": "optional",
-   "cardinality": "0 (compensation only)",
+   "cardinality": "0 for this route (compensation only, outside the normal flow)",
    "evidence": "PAGE TEXT: \"The book entry must be non-confirmed, and have been injected through the API.\" param[query] Id *"
   },
   {
@@ -183,16 +183,16 @@
   }
  ],
  "call_sequence": [
-  "0. [CHIFT_INTERNAL] Map consumer_id to the Horus licence connection: licence-specific api_url plus Bearer token, refreshed once on 401. Resolve FolderId with the shared folder rule (D7): use query folder_id when given; if it is null and exactly one folder was selected at activation, use that folder; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0} (cached); otherwise return 400 'folder_id required'. Any Horus 403 is returned as Chift 400 'folder not accessible with this connection' (D7).",
-  "1. [Connector validation, no Horus call] Reject the request before calling Horus when any of these holds: currency != 'EUR', or currency_exchange_rate is neither null nor 1; lines is empty; a customer_account/supplier_account line has no partner_id; operation_number is present but not purely numeric, or does not round-trip after conversion (leading zeros, more than 15 digits); the lines do not balance (round each amount to 2 decimals and require sum(amount) == 0).",
+  "0. [CHIFT_INTERNAL] Map consumer_id to the Horus licence connection: licence-specific api_url plus Bearer token, refreshed once on 401. Resolve FolderId with the shared folder rule (D7): use query folder_id when given (rejected with 400 'folder not selected for this connection' if it is not in the activation selection); if it is null and exactly one folder was selected at activation, use that folder; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0} (cached); otherwise return 400 'folder_id required'. Any Horus 403 is returned as Chift 400 'access denied for the connected Horus user (folder or action)' with the Horus Details (D7).",
+  "1. [Connector validation, no Horus call] Reject the request before calling Horus when any of these holds: currency != 'EUR' and currency_exchange_rate is null, ≤ 0 or exactly 1 (422); lines is empty; a customer_account/supplier_account line has no partner_id; operation_number is present but not purely numeric, does not round-trip after conversion (leading zeros, more than 15 digits), or equals 0; after normalisation (conversion to EUR when currency != 'EUR', then rounding of each amount to 2 decimals) the lines do not balance (422; no automatic residue adjustment unless Chift defines a residue rule). Step 6 uses these same normalised amounts for Debit/Credit and CostLines.",
   "2. [Journal] If journal_id is given: validate it against the cached daybooks.list, or GET /daybooks.info?Id=journal_id, and require Data.Folder.Id == FolderId (D13, otherwise 400) and Type == 600 (MiscOperation, D6). Daybooks of Type 610/690/700 are listed by Get journals as miscellaneous_operation with blocked=true (A), so they are rejected with 400 too. If journal_id is null: POST /daybooks.list {FolderId, Filter:{Types:[600]}}. Exactly one result → that is the DaybookId; otherwise return an error. Chift rule: 'automatically set if only one journal exists otherwise an error will be thrown'. This matches Get journals, where Type 600 is the only non-blocked miscellaneous_operation type (D6).",
   "3. [Analytics, only if a line has analytic_account] GET /folders.info (cached) → WithAnalytics must be true. Resolve each analytic_account (a Horus cost-section GUID Id, D8) only from the per-folder analytics cache: POST /cost-schemas.list once per folder, plus POST /cost-sections.list per List-type (CostSectionType 100) schema with Filter.IncludeInactive=true. Make no per-call cost-sections.info / cost-schemas.info lookups (D8). An id that is not in the cache (unknown, a section of another folder, or anything outside a List-type schema) → 400; a section with Inactive=true → 422 (D8). Keep the section SearchKey (Value), the parent schema SearchKey (SchemaSearchKey) and the folder's Mandatory schemas.",
-  "4. [Fiscal year and optional pre-checks]\n- Fiscal year: POST /fiscal-years.list {FolderId, Filter:{Dates:[operation_date as ISO 8601], IncludeFuture:true}}. Required when operation_number is supplied, because step 5 needs the fiscal-year period (StartDate/EndDate → StartMonth/StartYear/EndMonth/EndYear) (D12); otherwise optional. Refuse or warn only if no fiscal year comes back even with IncludeFuture=true; Horus's own behaviour in that case is undocumented ('?'). Require operation_date strictly after LastMiscOperationsClosureDate (D); that field is an untyped string|null, so parse it defensively. GET /fiscal-years.info returns IsClosed.\n- Accounts: POST /accounts.list {FolderId, Filter:{SearchKeys:[distinct account_numbers]}}. The filter is starts-with, so require an exact SearchKey match. Flag Inactive and IsSummary accounts; whether Horus refuses them is '?'.\n- Partners: for each distinct partner_id, POST /companies.list {FolderId, Filter:{Id}} (folder-scoped by FolderId). If GET /companies.info is used instead, require Data.Folder.Id == FolderId, otherwise 400 (D13). Check that the company exists and is IsCustomer (Type 1) or IsSupplier (Type 2). Optionally compare account_number with the company's Customer/SupplierConcentrationAccount, resolved to a SearchKey ('?').",
-  "5. [Duplicate pre-check, D12: whenever operation_number is supplied, drafts included] POST /book-entries.list {FolderId, DaybookId, StartMonth/StartYear/EndMonth/EndYear = fiscal year from step 4, Filter:{DocumentNo: Number}}. Compare DocumentNo exactly on the client side. A match → reject with 400 'operation_number already exists in this journal and fiscal year' (with the existing book entry Id in the message) and do not create. Treating daybook + fiscal year as the uniqueness scope of Number is an assumption (A): Horus does not document Number uniqueness.",
-  "6. [Build payload] Sort lines by line_number (stable sort). For each line:\n- Type from type.\n- Account = account_number.\n- amount > 0 → Credit = amount, Debit = 0; amount < 0 → Debit = -amount, Credit = 0.\n- Comment = description.\n- CompanyId = partner_id, only for Type 1/2.\n- If analytic_account: CostLines = [{Amount: |amount|, Costs: [{SchemaSearchKey, Value: section SearchKey}]}], both keys from the D8 cache. A single cost line carries 100% of the line, so the D8 largest-remainder rounding rule is trivially exact.\nHeader: FolderId, DaybookId, Date = operation_date + 'T00:00:00+00:00'.\nStatus and number cases (D12):\n- draft → Confirmed=false, Number = operation_number or 0.\n- posted with the per-consumer setting 'always push unconfirmed' on → Confirmed=false, Number = operation_number or 0. AutoGenerateNumber is not sent (it \"Only works if \"Confirmed\" is set to *true*\"), and the response status is 'draft'.\n- posted with a number → Confirmed=true, Number = operation_number.\n- posted without a number → Confirmed=true, AutoGenerateNumber=true, Number=0.",
+  "4. [Fiscal year and pre-checks]\n- Fiscal year: POST /fiscal-years.list {FolderId, Filter:{Dates:[operation_date as ISO 8601], IncludeFuture:true}}. Always called: it gives the closure dates for the pre-check (read fresh at each create, not from the reference cache) and, when operation_number is supplied, the period of the step-5 duplicate check (StartDate/EndDate → StartMonth/StartYear/EndMonth/EndYear) (D12). Refuse or warn only if no fiscal year comes back even with IncludeFuture=true; Horus's own behaviour in that case is undocumented ('?'). Require operation_date strictly after LastMiscOperationsClosureDate (D); that field is an untyped string|null, so parse it defensively. Whether LastVatClosureDate also blocks miscellaneous operations is undocumented: flag it, do not reject on it. GET /fiscal-years.info returns IsClosed (a year found closed can be cached).\n- Accounts: POST /accounts.list {FolderId, Filter:{SearchKeys:[distinct account_numbers]}}. The filter is starts-with, so require an exact SearchKey match. Flag Inactive and IsSummary accounts; whether Horus refuses them is '?'. Flag general_account lines whose account is a customer or supplier concentration account (cached companies.list concentration accounts, or IntCategory 'COLLECCUS').\n- Partners: for each distinct partner_id, POST /companies.list {FolderId, Filter:{Id}} (folder-scoped by FolderId). If GET /companies.info is used instead, require Data.Folder.Id == FolderId, otherwise 400 (D13). Check that the company exists and is IsCustomer (Type 1) or IsSupplier (Type 2). Optionally compare account_number with the company's Customer/SupplierConcentrationAccount, resolved to a SearchKey ('?').",
+  "5. [Duplicate pre-check, D12: whenever operation_number is supplied, drafts included] POST /book-entries.list {FolderId, DaybookId, StartMonth/StartYear/EndMonth/EndYear = fiscal year from step 4, Filter:{DocumentNo: Number}}. Compare DocumentNo exactly on the client side. A match → reject with 400 (or 409, per C6) 'operation_number already exists in this journal and fiscal year' (with the existing book entry Id in the message) and do not create. Treating daybook + fiscal year as the uniqueness scope of Number is an assumption (A): Horus does not document Number uniqueness. The check is best effort: two identical calls in flight can both pass it; a connector-side lock per folder, daybook and number narrows that window (proposal).",
+  "6. [Build payload] Sort lines by line_number (stable sort). For each line:\n- Type from type.\n- Account = account_number.\n- normalised amount (step 1) > 0 → Credit = amount, Debit = 0; < 0 → Debit = -amount, Credit = 0.\n- Comment = description.\n- CompanyId = partner_id, only for Type 1/2.\n- If analytic_account: CostLines = [{Amount: |normalised amount|, Costs: [{SchemaSearchKey, Value: section SearchKey}]}], both keys from the D8 cache. A single cost line carries 100% of the line, so the D8 largest-remainder rounding rule is trivially exact.\nHeader: FolderId, DaybookId, Date = operation_date + 'T00:00:00+00:00'.\nStatus and number cases (D12):\n- review mode (proposed default, D12), any status → Confirmed=false, Number = operation_number or 0; AutoGenerateNumber is not sent (it \"Only works if \"Confirmed\" is set to *true*\"); response status 'draft'.\n- direct mode, draft → Confirmed=false, Number = operation_number or 0.\n- direct mode, posted with a number → Confirmed=true, Number = operation_number.\n- direct mode, posted without a number → Confirmed=true, AutoGenerateNumber=true, Number=0.",
   "7. Record timestamp T0 just before the call, with a safety margin for clock skew. Then POST /book-entries.miscellaneous-operations.new (Content-Type: application/json) → {Id}.",
-  "8. [Read-back, conditional: AutoGenerateNumber was used, or the response must reflect what Horus stored] GET /book-entries.info?Id=Id: one call, no FolderId, DaybookId or period. Accept it only if Data.Folder.Id == FolderId and Data.Daybook.Id == DaybookId (D13); otherwise return 400 (not expected for an Id this call has just created in that folder). Take DocumentNo, Confirmed, Date, Daybook.Id and the AccountHistories[] references.\nOnly if full line fidelity is wanted (book-entries.info returns line references only and is not a sideloading endpoint): POST /account-histories.list {FolderId, StartMonth/StartYear/EndMonth/EndYear = month of operation_date, Filter:{BookEntryId: Id, IncludeReport:false, IncludeCompanyDetail:true, IncludeCostDetail:true}} → OrderNo, AccountSearchKey, Debit, Credit, Comment, AccountType, CompanyDetail.Company.Id and CostDetail. Compare the returned Ids with the AccountHistories references (D; whether that array includes IsReport lines is '?').\nIf lines are missing: GET /account-histories.info?Id=<one reference> → AccountingMonth/AccountingYear, then repeat account-histories.list with that exact period, or resolve each missing reference with account-histories.info (1 call per line). account-histories.info has no Folder field: call it only on references from the verified book-entries.info and check Data.BookEntry.Id == Id (D13).",
-  "9. Build MiscellaneousOperationOut: id = Id; journal_id = the DaybookId used (equal to Daybook.Id when read back); status from the Confirmed value actually sent (so 'draft' when 'always push unconfirmed' forced it, D12), or from book-entries.info when read back; operation_number = Number, or DocumentNo from book-entries.info, as a string (null if 0); operation_date = request date (or book-entries.info Date as YYYY-MM-DD); currency = 'EUR'; currency_exchange_rate = 1; lines echoed from the request, or rebuilt from the line read-back.\nError mapping (map on Horus ErrorType, the machine-readable category, not on Message):\n- 400 → Chift 400/422 with Horus Details; do not retry.\n- 401 → refresh the token once and retry; if it fails again, ask the user to reconnect.\n- 403 → Chift 400 'folder not accessible with this connection' (D7), with the Horus Details appended, because on this endpoint a 403 may also come from user rights (e.g. confirming entries). The Chift contract declares only 400/422/404. No retry.\n- 404 → Chift 404.\n- 500 or timeout → never blind-retry (D12; Horus has no idempotency key). First run a duplicate check (GET /book-entries.info cannot help, because the Id is lost with the response): book-entries.list Filter.DocumentNo when the number is known; otherwise book-entries.list (DaybookId + period) or account-histories.list (DaybookIds) with Filter.ModifiedAfter=T0, comparing date, accounts and amounts. Retry with exponential backoff only if no match is found."
+  "8. [Read-back, conditional: only when AutoGenerateNumber was used] GET /book-entries.info?Id=Id: one call, no FolderId, DaybookId or period. Check Data.Folder.Id == FolderId and Data.Daybook.Id == DaybookId (D13). A mismatch on an Id this call has just created is logged as an alert and the read-back data is not used; the request is not failed, because the operation exists. If the read-back times out or returns 404/500, never re-create and never return an error: build the response from the request (step 9), log the failure and retry the read-back later with backoff. Take DocumentNo, Confirmed, Date, Daybook.Id and the AccountHistories[] references.\nOnly if full line fidelity is wanted (book-entries.info returns line references only and is not a sideloading endpoint): POST /account-histories.list {FolderId, StartMonth/StartYear/EndMonth/EndYear = month of operation_date, Filter:{BookEntryId: Id, IncludeReport:false, IncludeCompanyDetail:true, IncludeCostDetail:true}} → OrderNo, AccountSearchKey, Debit, Credit, Comment, AccountType, CompanyDetail.Company.Id and CostDetail. Compare the returned Ids with the AccountHistories references (D; whether that array includes IsReport lines is '?').\nIf lines are missing: GET /account-histories.info?Id=<one reference> → AccountingMonth/AccountingYear, then repeat account-histories.list with that exact period, or resolve each missing reference with account-histories.info (1 call per line). account-histories.info has no Folder field: call it only on references from the verified book-entries.info and check Data.BookEntry.Id == Id (D13).",
+  "9. Build MiscellaneousOperationOut: id = Id; journal_id = the DaybookId used (equal to Daybook.Id when read back); status from the Confirmed value actually sent (so 'draft' in review mode, D12), or from book-entries.info when read back; operation_number = Number, or DocumentNo from book-entries.info, as a string (null if 0); operation_date = request date (or book-entries.info Date as YYYY-MM-DD); lines echoed from the request, or rebuilt from the line read-back; currency and currency_exchange_rate: when lines are echoed from the request, echo the request currency and rate with the request amounts; when lines are rebuilt from the read-back (EUR amounts), currency = 'EUR' and currency_exchange_rate = 1. EUR amounts are never paired with a foreign code (D4); final choice per Chift's answer on foreign-currency operations. When the read-back failed: id, journal_id, the status actually sent, operation_number = the supplied value or null (auto-generated, not yet read), lines echoed from the request.\nError mapping (map on Horus ErrorType, the machine-readable category, not on Message):\n- 400 → Chift 400/422 with Horus Details; do not retry.\n- 401 → refresh the token once and retry; if it fails again, ask the user to reconnect.\n- 403 → Chift 400 'access denied for the connected Horus user (folder or action)' (D7), with the Horus Details appended, because on this endpoint a 403 may also come from user rights (e.g. confirming entries). The Chift contract declares only 400/422/404. No retry.\n- 404 → Chift 404.\n- 500 or timeout → never blind-retry (D12; Horus has no idempotency key). First run a duplicate check (GET /book-entries.info cannot help, because the Id is lost with the response): book-entries.list Filter.DocumentNo when the number is known; otherwise book-entries.list (DaybookId + period) or account-histories.list (DaybookIds) with Filter.ModifiedAfter=T0, comparing date, accounts and amounts. With a known number, retry with exponential backoff only if no match is found. If the check is inconclusive (no number and no unique match on date, accounts and amounts), return an outcome-unknown error instead of retrying."
  ],
  "field_mappings": [
   {
@@ -211,7 +211,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.miscellaneous-operations.new → FolderId",
    "classification": "DIRECT",
-   "rule": "Chift folder id = Horus Folder.Id (GUID from folders.list). Shared folder rule (D7): folder_id is required whenever the connection has more than one selected folder. If it is null and exactly one folder was selected at activation, use it; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; otherwise return 400 'folder_id required'. A Horus 403 → Chift 400 'folder not accessible with this connection'. A Horus 'folder' is the accounting record of the legal entity whose books are kept. That is the same concept as a Chift folder and is not a Horus 'company', which is a third-party legal entity the folder deals with. The equivalence is deduced from the two descriptions.",
+   "rule": "Chift folder id = Horus Folder.Id (GUID from folders.list). Shared folder rule (D7): folder_id is required whenever the connection has more than one selected folder. If it is null and exactly one folder was selected at activation, use it; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; otherwise return 400 'folder_id required'. A Horus 403 → Chift 400 'access denied for the connected Horus user (folder or action)', with the Horus Details. A folder_id outside the activation selection is rejected with 400 'folder not selected for this connection' before any Horus call (D7, Chift FolderItem.selected). A Horus 'folder' is the accounting record of the legal entity whose books are kept. That is the same concept as a Chift folder and is not a Horus 'company', which is a third-party legal entity the folder deals with. The equivalence is deduced from the two descriptions.",
    "label": "D",
    "evidence": "Chift: \"A folder represents a legal entity within the system.\"; FolderId * (required); Guide: Data model \"A folder is the accounting record of one company: its configuration, chart of accounts, daybooks and entries. Almost every endpoint requires a FolderId.\""
   },
@@ -221,29 +221,29 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.miscellaneous-operations.new → Number (+ AutoGenerateNumber); duplicate pre-check via POST /book-entries.list → Filter.DocumentNo (D12)",
    "classification": "TRANSFORM",
-   "rule": "Horus semantics [F]: Number is numeric, may be 0 while unconfirmed, and AutoGenerateNumber works only with Confirmed=true (Number left at 0). Connector rule [D]: convert string to number. Reject non-numeric values, and values that do not round-trip (leading zeros, more than 15 digits), with 400/422. If null: Number=0; when Confirmed=true is actually sent (status=posted and the 'always push unconfirmed' setting off, D12), also send AutoGenerateNumber=true and read DocumentNo back. If given: Number=value, AutoGenerateNumber=false, and before creating run the D12 duplicate pre-check: POST /book-entries.list {FolderId, DaybookId, fiscal-year period from fiscal-years.list, Filter.DocumentNo=value}, exact client-side compare, 400 on a match. Treating daybook + fiscal year as the uniqueness scope is an assumption [A]. Uniqueness and format (the example 201909001 looks like YYYYMM + sequence) are not documented.",
-   "label": "D",
+   "rule": "Horus semantics [F]: Number is numeric, may be 0 while unconfirmed, and AutoGenerateNumber works only with Confirmed=true (Number left at 0). Assumption [A]: operation_number is treated as the Horus entry Number (the Chift field has no description). Connector rule (proposal, C7): convert string to number; reject with 422 non-numeric values, values that do not round-trip (leading zeros, more than 15 digits) and the value 0 (Number 0 means 'no number' in Horus, and the D12 pre-check would match every unnumbered entry). Alternative for Chift (C7): confirmed operations always use AutoGenerateNumber and the client value is kept in the line comment. If null: Number=0; when Confirmed=true is actually sent (status 'posted' on a connection in direct mode, D12), also send AutoGenerateNumber=true and read DocumentNo back. If given: Number=value, AutoGenerateNumber=false, and before creating run the D12 duplicate pre-check: POST /book-entries.list {FolderId, DaybookId, fiscal-year period from fiscal-years.list, Filter.DocumentNo=value}, exact client-side compare, 400 (or 409, per C6) on a match. Treating daybook + fiscal year as the uniqueness scope is an assumption [A]. Uniqueness and format (examples differ: 201909001, 1904001, 2301016) are not documented.",
+   "label": "A",
    "evidence": "Number *: number [example=201909001] \"The number of the miscellaneous operation, which will also be associated to the book entry (can be 0 if not confirmed)\"; AutoGenerateNumber: \"Only works if \"Confirmed\" is set to *true*. In that case, the \"Number\" value will be ignored and should be left at 0.\"; POST /book-entries.list → Filter.DocumentNo: number [example=1904001]"
   },
   {
    "chift_field": "currency",
    "kind": "request_field",
    "chift_required": true,
-   "horus_source": "none on misc-op endpoints (CurrencyCode exists only on invoices.*.new/update)",
-   "classification": "NA",
-   "rule": "Validate only: accept 'EUR' and reject anything else with 400 ('Horus miscellaneous operations support only EUR'). Nothing is sent. The folder base currency cannot be read, because folders.info has no currency field.",
-   "label": "D",
-   "evidence": "The misc-op .new schema has no currency field. CurrencyCode appears on invoices.sales.new etc. as \"*NULL* by default (= EUR). The folder must be configured to allow currencies for using this field.\"; POST /account-histories.list → CurrencyCode: \"*NULL* means EURO (€) was used.\""
+   "horus_source": "none on misc-op endpoints (no CurrencyCode/CurrencyRate): amounts are stored in the folder currency (EUR); drives the conversion of Lines[].Debit/Credit",
+   "classification": "TRANSFORM",
+   "rule": "Horus miscellaneous operations have no currency field, so amounts are stored in the folder currency, assumed EUR (D4; folders.info has no currency field). 'EUR' → amounts sent as given. Any other ISO code → the operation is converted, not rejected, as the Chift contract describes for journals that do not allow other currencies ('an exchange rate must be provided for Chift to convert the amounts to the journal currency'); currency_exchange_rate is then required. Proposal: Chift core converts before calling the connector (preferred reading of that wording); fallback, the connector converts each line at the supplied rate (direction per Chift) and rounds to 2 decimals (see lines[].amount). The original currency is not kept in Horus; it may optionally be noted in the line comment.",
+   "label": "A",
+   "evidence": "The misc-op .new schema has no currency field. CurrencyCode appears on invoices.sales.new etc. as \"*NULL* by default (= EUR). The folder must be configured to allow currencies for using this field.\"; POST /account-histories.list → CurrencyCode: \"*NULL* means EURO (€) was used.\"; Chift Get journals other_currencies_allowed: \"If it doesn't allow other currencies an exchange rate must be provided for Chift to convert the amounts to the journal currency.\""
   },
   {
    "chift_field": "currency_exchange_rate",
    "kind": "request_field",
    "chift_required": false,
-   "horus_source": "none",
-   "classification": "NA",
-   "rule": "Accept null or 1 and reject any other value. A rate is meaningful only for a foreign currency, which Horus ODs cannot carry.",
-   "label": "D",
-   "evidence": "No CurrencyRate in POST /book-entries.miscellaneous-operations.new; CurrencyRate exists only on invoice endpoints (\"Nullable, rate of the day will be used by default\")."
+   "horus_source": "none (used only to convert line amounts to EUR)",
+   "classification": "TRANSFORM",
+   "rule": "Required when currency ≠ 'EUR' (Chift: 'Must be filled in when creating the operation in another currency from the folder's default currency'). Null, a value ≤ 0, or exactly 1 (the Chift default, which cannot be told apart from a missing rate) → 422 for a non-EUR operation. Used only for the conversion described under currency; never sent to Horus. Ignored for EUR. The rate direction is undocumented on both sides (question to Chift).",
+   "label": "A",
+   "evidence": "Chift currency_exchange_rate: \"default=1\" / \"Must be filled in when creating the operation in another currency from the folder's default currency.\"; no CurrencyRate in POST /book-entries.miscellaneous-operations.new; CurrencyRate exists only on invoice endpoints (\"Nullable, rate of the day will be used by default\")."
   },
   {
    "chift_field": "operation_date",
@@ -251,8 +251,8 @@
    "chift_required": true,
    "horus_source": "POST /book-entries.miscellaneous-operations.new → Date",
    "classification": "TRANSFORM",
-   "rule": "YYYY-MM-DD → 'YYYY-MM-DDT00:00:00+00:00'. Optional pre-check with fiscal-years.list (Filter.Dates + IncludeFuture=true): a fiscal year contains the date, and the date is strictly after LastMiscOperationsClosureDate (comparison rule D, field format undocumented). fiscal-years.info gives IsClosed=false.",
-   "label": "F",
+   "rule": "YYYY-MM-DD → 'YYYY-MM-DDT00:00:00+00:00'. Pre-check on every create with fiscal-years.list, read fresh (closure dates are not cached) (Filter.Dates + IncludeFuture=true): a fiscal year contains the date, and the date is strictly after LastMiscOperationsClosureDate (comparison rule D, field format undocumented). fiscal-years.info gives IsClosed=false.",
+   "label": "D",
    "evidence": "Date *: string(date-time) [example=\"2019-09-04T00:00:00+00:00\"]; Guide: Making requests \"Dates are exchanged as ISO 8601 strings with a time zone offset\""
   },
   {
@@ -262,18 +262,18 @@
    "horus_source": "POST /book-entries.miscellaneous-operations.new → DaybookId (validated/defaulted via daybooks.list / daybooks.info)",
    "classification": "LOOKUP",
    "rule": "Chift journal id = Horus Daybook.Id. When given: verify Data.Folder.Id == FolderId (D13) and Type == 600 (MiscOperation), otherwise return 400. Type 610/690/700 daybooks are listed by Get journals as miscellaneous_operation with blocked=true (D6, A) and are rejected the same way. When null: daybooks.list Filter.Types=[600]. Exactly one result → use it; otherwise error (Chift contract). If a wages daybook (IsWages, also Type 600) also exists, auto-selection will usually fail. Only Type 600 is auto-selected and validated, which matches the blocked flag of Get journals (D6).",
-   "label": "F",
+   "label": "A",
    "evidence": "DaybookId *; Guide: Data model \"A daybook is an accounting journal\" / \"The daybook Type drives which endpoint you use to post entries\" (600 → book-entries.miscellaneous-operations.new); POST /daybooks.list → Types \"`600`: MiscOperation\"; GET /daybooks.info → Data.Folder.Id"
   },
   {
    "chift_field": "status",
    "kind": "request_field",
    "chift_required": false,
-   "horus_source": "POST /book-entries.miscellaneous-operations.new → Confirmed (+ AutoGenerateNumber); per-consumer setting 'always push unconfirmed' (D12)",
+   "horus_source": "POST /book-entries.miscellaneous-operations.new → Confirmed (+ AutoGenerateNumber); per-connection posting mode (D12)",
    "classification": "TRANSFORM",
-   "rule": "draft → Confirmed=false. posted (the Chift default) → Confirmed=true, unless the per-consumer setting 'always push unconfirmed' is on (recommended where the accountant must review API entries); then Confirmed=false (D12). Both behaviours are possible in Horus, since Confirmed is a writable flag. Trap: Horus defaults to unconfirmed so that the accountant can review, and confirmed entries cannot be deleted through the API. Which default fits fiduciary clients is an open product decision (D12). Whether every licence or user type, for example entrepreneurs, can confirm entries is undocumented; a 403 is possible.",
-   "label": "D",
-   "evidence": "Confirmed: \"Nullable, *false* by default\"; Guide: Data model \"Entries pushed through the API are unconfirmed by default ( Confirmed: false ), which lets the accountant review them in Horus Office before confirming them.\"; book-entries.list ConfirmedOnly \"Include only book entries confirmed by the accountant.\""
+   "rule": "Proposal (decision needed, C1; D12). Chift 'draft' = Horus unconfirmed: booked in the ledger and included by default in Horus list reads ('By default, lists include unconfirmed entries, i.e. entries not yet validated by the accountant'), not yet confirmed by the accountant, and still deletable through the API ('The book entry must be non-confirmed, and have been injected through the API'). Horus Confirmed means confirmed by the accountant; it is not documented as the same thing as Chift 'posted'. Proposed rule: a posting mode chosen per connection at activation. Review mode (proposed default): every operation is pushed with Confirmed=false. Direct mode: 'posted' → Confirmed=true, 'draft' → Confirmed=false. AutoGenerateNumber works only with Confirmed=true, so in review mode a posted operation without operation_number is stored with Number 0. Confirmed operations cannot be deleted through the API. Whether every licence or user type, for example a non-accountant user, may confirm entries is undocumented; a 403 is possible (question to Horus on confirmation rights).",
+   "label": "A",
+   "evidence": "Confirmed: \"Nullable, *false* by default\"; Guide: Data model \"Entries pushed through the API are unconfirmed by default ( Confirmed: false ), which lets the accountant review them in Horus Office before confirming them. Some operations, such as deleting a miscellaneous operation, are only possible on unconfirmed entries.\"; Guide: Reading accounting data \"By default, lists include unconfirmed entries, i.e. entries not yet validated by the accountant.\"; DELETE /book-entries.miscellaneous-operations.delete \"The book entry must be non-confirmed, and have been injected through the API.\"; book-entries.list ConfirmedOnly \"Include only book entries confirmed by the accountant.\"; Chift MiscellaneousOperationStatusIn enum ['draft','posted'], default \"posted\""
   },
   {
    "chift_field": "lines[]",
@@ -291,9 +291,9 @@
    "chift_required": false,
    "horus_source": "none on input (read side: account-histories → OrderNo)",
    "classification": "TRANSFORM",
-   "rule": "No writable field. Used only to order the Lines array (stable sort; duplicates keep input order). Assumption to validate: Horus stores array order as OrderNo.",
+   "rule": "No writable field. Chift uses line_number only to order the lines ('This is used to order the lines in the operation'): the Lines array is sorted by it (stable sort; duplicates keep input order) and the response echoes the request values. Assumption to validate: Horus stores array order as OrderNo; only the literal values (e.g. 10/20/30) may come back renumbered on a later read.",
    "label": "A",
-   "evidence": "No line-number field in Lines[] of .new; POST /account-histories.list → Data[].OrderNo: number [example=1]"
+   "evidence": "Chift line_number: \"This is used to order the lines in the operation. It is automatically set to 1 if not provided.\"; no line-number field in Lines[] of .new; POST /account-histories.list → Data[].OrderNo: number [example=1]"
   },
   {
    "chift_field": "lines[].description",
@@ -311,8 +311,8 @@
    "chift_required": true,
    "horus_source": "POST /book-entries.miscellaneous-operations.new → Lines[].Debit, Lines[].Credit",
    "classification": "TRANSFORM",
-   "rule": "amount > 0 → Credit=amount, Debit=0. amount < 0 → Debit=abs(amount), Credit=0. amount = 0 → both 0 (acceptance undocumented). Both columns are required and must be non-negative. Connector check: sum(amount) == 0, which is equivalent to total Debit == total Credit.",
-   "label": "F",
+   "rule": "Normalise once: the amount in EUR (converted at currency_exchange_rate when currency ≠ 'EUR', see currency), rounded to 2 decimals. Normalised amount > 0 → Credit = amount, Debit = 0; < 0 → Debit = abs(amount), Credit = 0; = 0 → both 0 (acceptance undocumented). Both columns are required and non-negative. The balance check (sum of normalised amounts == 0) and CostLines[].Amount use the same normalised values, so the connector checks exactly what it sends.",
+   "label": "D",
    "evidence": "Chift: \"Positive for Credit and negative for Debit.\"; Horus Debit *: \"Non-negative amount\"; Credit *: \"Non-negative amount\""
   },
   {
@@ -331,8 +331,8 @@
    "chift_required": true,
    "horus_source": "POST /book-entries.miscellaneous-operations.new → Lines[].Account",
    "classification": "DIRECT",
-   "rule": "Sent as the account search key [F]. On customer/supplier lines this is expected to be the collective (concentration) account, e.g. 400000/440000, with the third party identified by CompanyId [D]. This reading comes from the guide's Type 1 + 400000 example and the company concentration accounts; Horus behaviour on a mismatch is undocumented. Optional validation with accounts.list: exact SearchKey match, Inactive/IsSummary flagged.",
-   "label": "F",
+   "rule": "Sent as the account search key [F]. On customer/supplier lines this is expected to be the collective (concentration) account, e.g. 400000/440000, with the third party identified by CompanyId [D]. This reading comes from the guide's Type 1 + 400000 example and the company concentration accounts; Horus behaviour on a mismatch is undocumented. Optional validation with accounts.list: exact SearchKey match, Inactive/IsSummary flagged, and a general_account line on a customer or supplier concentration account flagged (see edge cases).",
+   "label": "D",
    "evidence": "Lines[].Account *: \"The account's search key\"; Guide: Data model \"Each account is identified by a unique search key, which is usually the account number\" / \"its customer and supplier concentration accounts (e.g. 400000 and 440000 )\""
   },
   {
@@ -351,7 +351,7 @@
    "chift_required": false,
    "horus_source": "POST /book-entries.miscellaneous-operations.new → Lines[].CostLines[].Amount + Costs[].SchemaSearchKey/Value (via the per-folder analytics cache: cost-schemas.list + cost-sections.list with IncludeInactive=true, D8)",
    "classification": "LOOKUP",
-   "rule": "Chift analytic_account = Horus cost-section GUID Id (D8; aligned with Get analytic accounts). Resolve it only from the folder-scoped analytics cache (D8): cost-sections.list (built per List-type schema with Filter.IncludeInactive=true) → SearchKey, Inactive, CostSchema.Id; then cost-schemas.list → schema SearchKey. No per-call cost-sections.info / cost-schemas.info. This also enforces the cross-folder guard (D13), since cost-sections.info takes no FolderId and returns no Folder. Unknown id → 400; Inactive section → 422 (D8). Send CostLines=[{Amount: abs(amount), Costs:[{SchemaSearchKey, Value: section SearchKey}]}]: one cost line carries 100% of the line (Chift allows no distribution), so the D8 largest-remainder rounding is trivially exact. The folder must be WithAnalytics. Leave CostDistributionKey null. Free schemas (CostSectionType 900) are excluded from Chift analytics in v1 (D8): they are not in the cache, so they cannot be addressed.",
+   "rule": "Chift analytic_account = Horus cost-section GUID Id (D8; aligned with Get analytic accounts). Resolve it only from the folder-scoped analytics cache (D8): cost-sections.list (built per List-type schema with Filter.IncludeInactive=true) → SearchKey, Inactive, CostSchema.Id; then cost-schemas.list → schema SearchKey. No per-call cost-sections.info / cost-schemas.info. This also enforces the cross-folder guard (D13), since cost-sections.info takes no FolderId and returns no Folder. Unknown id → 400; Inactive section → 422 (D8). Send CostLines=[{Amount: abs(normalised amount), Costs:[{SchemaSearchKey, Value: section SearchKey}]}]: one cost line carries 100% of the line (Chift allows no distribution), so the D8 largest-remainder rounding is trivially exact. The folder must be WithAnalytics. Leave CostDistributionKey null. Free schemas (CostSectionType 900) are excluded from Chift analytics in v1 (D8): they are not in the cache, so they cannot be addressed.",
    "label": "D",
    "evidence": "Chift analytic_account: \"This is the id of a analytic account - no distribution possible.\"; CostLines[].Amount *: \"The sum of all cost lines' amounts must be equal to the corresponding line's debit/credit amount.\"; SchemaSearchKey *: \"The search key of an existing cost schema.\"; Value *: \"The search key of an existing cost section, linked to this cost schema\"; POST /cost-sections.list → Filter.IncludeInactive: \"*FALSE* by default\", Data[].Inactive; POST /cost-schemas.list → CostSectionType \"`100`: List - expected values are cost sections - `900`: Free\""
   },
@@ -371,7 +371,7 @@
    "chift_required": false,
    "horus_source": "request Number, or read-back GET /book-entries.info?Id= → Data.DocumentNo (alternatives: account-histories.list Filter.BookEntryId → Data[].DocumentNo; book-entries.list → Data[].DocumentNo)",
    "classification": "TRANSFORM",
-   "rule": "Number to string. When the number was auto-generated, read DocumentNo back with GET /book-entries.info on the Id returned by create (one call, no period or daybook). Return null if the number is 0 (unconfirmed, no number). Leading zeros from the input are not preserved.",
+   "rule": "Number to string. When the number was auto-generated, read DocumentNo back with GET /book-entries.info on the Id returned by create (one call, no period or daybook). Return null if the number is 0 (unconfirmed, no number), or if Horus generated it and the read-back failed (retried later). Inputs with leading zeros never reach Horus (see operation_number).",
    "label": "D",
    "evidence": "Number: \"which will also be associated to the book entry\"; GET /book-entries.info → Data.DocumentNo: number [example=1904001]; Guide: Reading accounting data \"Use book-entries.info to get the full detail of one entry.\""
   },
@@ -379,20 +379,20 @@
    "chift_field": "response.currency",
    "kind": "response_field",
    "chift_required": true,
-   "horus_source": "none (account-histories CurrencyCode NULL = EUR)",
-   "classification": "CONSTANT",
-   "rule": "'EUR' (the only accepted input).",
-   "label": "D",
+   "horus_source": "request echo, or 'EUR' when lines are rebuilt from the read-back",
+   "classification": "TRANSFORM",
+   "rule": "Echo the request currency when the lines are echoed from the request (amounts in the original currency); 'EUR' when the lines are rebuilt from the read-back (EUR amounts). Never pair EUR amounts with a foreign code (D4). Final choice per Chift.",
+   "label": "A",
    "evidence": "POST /account-histories.list → CurrencyCode: \"*NULL* means EURO (€) was used.\""
   },
   {
    "chift_field": "response.currency_exchange_rate",
    "kind": "response_field",
    "chift_required": false,
-   "horus_source": "none",
-   "classification": "CONSTANT",
-   "rule": "1",
-   "label": "D",
+   "horus_source": "request echo, or 1 when lines are rebuilt from the read-back",
+   "classification": "TRANSFORM",
+   "rule": "The request rate when the request is echoed; 1 when the lines are rebuilt from the read-back (D4).",
+   "label": "A",
    "evidence": "No rate on misc-op endpoints."
   },
   {
@@ -431,7 +431,7 @@
    "chift_required": true,
    "horus_source": "Confirmed value actually sent (or GET /book-entries.info → Data.Confirmed; account-histories.list / book-entries.list → Data[].Confirmed)",
    "classification": "TRANSFORM",
-   "rule": "Confirmed=false → 'draft'; true → 'posted'. Without a read-back, use the Confirmed value actually sent, so a 'posted' request pushed unconfirmed under the 'always push unconfirmed' setting (D12) returns 'draft'. A new entry cannot be 'matched' because Chift sends no MatchNo. 'cancelled' has no Horus equivalent.",
+   "rule": "Confirmed=false → 'draft'; true → 'posted': the status actually stored (the value sent, or book-entries.info Confirmed when read back). In review mode (D12) a 'posted' request returns 'draft'. A new entry cannot be 'matched' because Chift sends no MatchNo. 'cancelled' has no Horus equivalent.",
    "label": "D",
    "evidence": "GET /book-entries.info → Data.Confirmed: boolean; POST /book-entries.list → Data[].Confirmed: boolean; POST /account-histories.list → Data[].Confirmed: boolean; Chift MiscellaneousOperationStatusOut enum ['cancelled','draft','posted','matched']"
   }
@@ -449,13 +449,13 @@
   },
   {
    "horus_field": "Number (when operation_number is null)",
-   "how_to_fill": "0. When Confirmed=true is actually sent (status=posted, setting off), also send AutoGenerateNumber=true and read DocumentNo back (GET /book-entries.info?Id= → DocumentNo). When the per-consumer 'always push unconfirmed' setting forces Confirmed=false (D12), Number stays 0 and no number is returned.",
-   "label": "F"
+   "how_to_fill": "0. In direct mode, when Confirmed=true is sent (status=posted), also send AutoGenerateNumber=true and read DocumentNo back (GET /book-entries.info?Id= → DocumentNo). In review mode (D12, proposed default) Confirmed=false, so Number stays 0 and no number is returned.",
+   "label": "A"
   },
   {
    "horus_field": "Lines[].Debit and Lines[].Credit (both required)",
-   "how_to_fill": "Derived from the sign of the Chift amount; the unused column is set to 0.",
-   "label": "F"
+   "how_to_fill": "From the sign of the normalised Chift amount (converted to EUR when currency ≠ 'EUR', rounded to 2 decimals); the unused column is set to 0.",
+   "label": "D"
   },
   {
    "horus_field": "Lines[].CompanyId (required for Type 1/2)",
@@ -464,8 +464,8 @@
   },
   {
    "horus_field": "Lines[].CostLines[].Amount",
-   "how_to_fill": "abs(line amount): one cost line carrying 100% of the line. Chift allows no distribution, so the D8 largest-remainder rule is trivially exact.",
-   "label": "F"
+   "how_to_fill": "abs(normalised line amount): one cost line carrying 100% of the line. Chift allows no distribution, so the D8 largest-remainder rule is trivially exact.",
+   "label": "D"
   },
   {
    "horus_field": "Lines[].CostLines[].Costs[].SchemaSearchKey / Value",
@@ -474,8 +474,8 @@
   },
   {
    "horus_field": "Confirmed / AutoGenerateNumber (optional)",
-   "how_to_fill": "Computed from status, the per-consumer 'always push unconfirmed' setting (D12) and the presence of operation_number.",
-   "label": "D"
+   "how_to_fill": "Computed from status, the per-connection posting mode (D12) and the presence of operation_number.",
+   "label": "A"
   },
   {
    "horus_field": "Lines[].VehicleId (optional; may matter if the account requires a vehicle)",
@@ -491,17 +491,17 @@
  "limitations": [
   {
    "description": "There is no currency or exchange-rate field on the misc-operation endpoints. Foreign currency exists only on the invoice endpoints, and folders.info exposes no base currency.",
-   "impact": "The route is EUR-only. Chift operations in any other currency cannot be posted and must be rejected. currency_exchange_rate is accepted only as 1 or null.",
+   "impact": "Horus stores miscellaneous operations in EUR only. Foreign-currency operations are converted at the supplied rate (by Chift core or, as a fallback, by the connector) and the original currency is not kept in Horus; it can optionally be noted in the line comment. currency_exchange_rate is required for them.",
    "label": "D"
   },
   {
    "description": "Strict balance: the OD must balance, and the misc-op schema has no AllowUnbalanced option (that option exists only on the invoice endpoints).",
-   "impact": "The connector must validate sum(amount)==0, with rounding, before calling. Otherwise Horus returns 400.",
+   "impact": "The connector normalises every amount once (conversion when needed, rounding to 2 decimals) and checks sum == 0 on exactly the values it sends. Otherwise Horus returns 400.",
    "label": "F"
   },
   {
    "description": "Confirmed (posted) entries cannot be deleted through the API. DELETE works only for non-confirmed entries injected through the API.",
-   "impact": "Chift's default status 'posted' maps to Confirmed=true (D12) and makes the operation irreversible through the connector, unless the per-consumer 'always push unconfirmed' setting is on. Corrections need the update endpoint (which returns a new Id) or the accountant.",
+   "impact": "In direct mode (D12), 'posted' maps to Confirmed=true and the operation can no longer be deleted through the connector. In review mode (proposed default) it stays deletable through the API until the accountant confirms it. Corrections of confirmed entries need the update endpoint (which returns a new Id) or the accountant.",
    "label": "F"
   },
   {
@@ -511,17 +511,17 @@
   },
   {
    "description": "Horus Number is numeric. Auto-generation works only together with Confirmed=true.",
-   "impact": "Alphanumeric Chift operation_number values are refused, and numeric strings lose leading zeros. A draft without a number is stored with Number 0, so no operation_number can be returned.",
+   "impact": "Alphanumeric operation_number values cannot be stored as the entry number, and values with leading zeros are rejected (proposal; alternative in C7: let Horus number confirmed operations and keep the client value in the line comment). An unconfirmed operation without a number is stored with Number 0, so no operation_number can be returned.",
    "label": "F"
   },
   {
    "description": "Create returns only {Id}. GET /book-entries.info reads the entry back by that Id alone, but returns the lines only as Type/Id references and is not in the guide's list of sideloading endpoints.",
-   "impact": "Header read-back (DocumentNo, Confirmed, Date, Daybook.Id) is one extra call with no period or daybook, needed when the number is auto-generated. Full line fidelity costs one more call: account-histories.list (Filter.BookEntryId, mandatory month/year period) or one account-histories.info per line.",
+   "impact": "Header read-back (DocumentNo, Confirmed, Date, Daybook.Id) is one extra call with no period or daybook, needed only when the number is auto-generated; if it fails, the response is built from the request and the read-back is retried later. Full line fidelity costs one more call: account-histories.list (Filter.BookEntryId, mandatory month/year period) or one account-histories.info per line.",
    "label": "F"
   },
   {
    "description": "line_number has no writable Horus field.",
-   "impact": "Line order is conveyed only through the order of the array (assumed to become OrderNo).",
+   "impact": "Line order is preserved through the order of the array (assumed to become OrderNo); the literal line_number values are not stored.",
    "label": "A"
   },
   {
@@ -541,7 +541,7 @@
   },
   {
    "description": "No idempotency key in Horus write endpoints.",
-   "impact": "A retry after a timeout can create a duplicate, so the connector never blind-retries (D12). Whenever operation_number is supplied, a book-entries.list Filter.DocumentNo pre-check runs before the create (D12; the daybook + fiscal-year uniqueness scope is an assumption), and the same exact check runs after a timeout. With auto-numbering, detection after a timeout is only heuristic: query entries in the daybook/period with ModifiedAfter = pre-POST timestamp and compare date, accounts and amounts. Concurrent postings by other users can blur the result.",
+   "impact": "A retry after a timeout can create a duplicate, so the connector never blind-retries (D12). Whenever operation_number is supplied, a book-entries.list Filter.DocumentNo pre-check runs before the create (D12; the daybook + fiscal-year uniqueness scope is an assumption), and the same exact check runs after a timeout. With auto-numbering, detection after a timeout is only heuristic: query entries in the daybook/period with ModifiedAfter = pre-POST timestamp and compare date, accounts and amounts. Concurrent postings by other users can blur the result, so an inconclusive check returns an outcome-unknown error instead of a retry. The protection is best effort: two identical calls in flight can both pass the pre-check.",
    "label": "D"
   },
   {
@@ -555,16 +555,16 @@
    "label": "D"
   },
   {
-   "description": "Every create that carries an operation_number needs two extra calls before posting: fiscal-years.list for the fiscal-year period, and a book-entries.list Filter.DocumentNo duplicate pre-check (D12).",
-   "impact": "Higher latency and API usage on numbered operations; this is part of why the route is rated workaround (D11). The pre-check assumes Number is unique per daybook and fiscal year, which Horus does not document.",
+   "description": "Every create makes one live fiscal-years.list call for the closure check (closure dates are read fresh). A create that carries an operation_number makes one more before posting: the book-entries.list Filter.DocumentNo duplicate pre-check (D12), over the fiscal year returned by the closure check.",
+   "impact": "Slightly higher latency on every create, and more on numbered operations. Both pre-checks are safeguards chosen by the connector (Horus recommends the closure check; no idempotency key is documented), not Horus constraints, and are not reasons for the verdict. The duplicate pre-check assumes Number is unique per daybook and fiscal year, which Horus does not document.",
    "label": "D"
   }
  ],
  "edge_cases": [
   {
    "case": "Lines do not balance (sum of Chift amounts != 0), including floating-point drift",
-   "handling": "Round to 2 decimals and reject with 422 before calling Horus. Horus would return 400 (Guide: 'unbalanced entry').",
-   "label": "F"
+   "handling": "Normalise each amount once (convert when needed, round to 2 decimals), check the balance on the normalised values, and send exactly those values. Reject with 422 if they do not balance: for example 33.333 + 33.333 − 66.666 balances as sent but not after rounding, and 10.004 − 10.001 balances after rounding but not as sent. Horus would return 400 (Guide: 'unbalanced entry'). No automatic residue adjustment unless Chift defines one.",
+   "label": "D"
   },
   {
    "case": "customer_account/supplier_account line without partner_id",
@@ -587,23 +587,33 @@
    "label": "?"
   },
   {
-   "case": "status=posted and operation_number null",
-   "handling": "Confirmed=true, AutoGenerateNumber=true, Number=0. Read DocumentNo back via GET /book-entries.info?Id=<returned Id>, accepted only if Data.Folder.Id = FolderId (D13).",
-   "label": "F"
+   "case": "general_account line whose account_number is a customer or supplier concentration account (a CustomerConcentrationAccount/SupplierConcentrationAccount in the cached companies.list, or IntCategory 'COLLECCUS')",
+   "handling": "Warn or reject according to Chift policy. The line would be stored as a general line (Type 3 → AccountType 300, D) without a company, so the collective balance moves without a third party and company-level open items cannot explain it. Whether Horus accepts it is undocumented.",
+   "label": "?"
+  },
+  {
+   "case": "status=posted and operation_number null, direct mode",
+   "handling": "Confirmed=true, AutoGenerateNumber=true, Number=0. Read DocumentNo back via GET /book-entries.info?Id=<returned Id>, used only if Data.Folder.Id = FolderId (D13). If that read-back fails or shows another folder, return operation_number null and retry later (see the read-back edge case).",
+   "label": "D"
   },
   {
    "case": "status=draft and operation_number null",
-   "handling": "Confirmed=false, Number=0. Response operation_number=null.",
+   "handling": "Confirmed=false, Number=0. Response operation_number=null. No business key until the accountant confirms it: an edit before confirmation gives a new id that the consumer cannot reconcile (C7) (D).",
    "label": "F"
   },
   {
    "case": "operation_number is non-numeric (e.g. 'OD-2024-001')",
-   "handling": "Reject with 400/422 (Number is a number type). Do not silently fall back to auto-numbering.",
+   "handling": "Reject with 422 (Number is a number type; proposal, C7). Do not silently fall back to auto-numbering; the alternative in C7 (Horus numbers confirmed operations and the client value is kept in the line comment) needs a Chift decision.",
    "label": "D"
   },
   {
    "case": "operation_number with leading zeros ('000123') or a very long digit string",
-   "handling": "Numeric conversion drops leading zeros ('000123' → 123), and more than 15 digits risks precision loss in JSON numbers. Either reject values that do not round-trip, or accept them and return the Horus value (string of Number), documenting the normalisation.",
+   "handling": "Reject with 422: numeric conversion drops leading zeros ('000123' → 123) and more than 15 digits risks precision loss in JSON numbers (proposal; C7).",
+   "label": "D"
+  },
+  {
+   "case": "operation_number = '0'",
+   "handling": "Reject with 422: Number 0 means 'no number' in Horus ('can be 0 if not confirmed'), and the D12 pre-check would match every unnumbered entry.",
    "label": "D"
   },
   {
@@ -617,13 +627,13 @@
    "label": "D"
   },
   {
-   "case": "currency != EUR or currency_exchange_rate != 1",
-   "handling": "Reject with 400 'currency not supported for Horus miscellaneous operations'.",
-   "label": "D"
+   "case": "currency ≠ EUR",
+   "handling": "Convert at currency_exchange_rate (Chift core or connector, per Chift's answer). A missing rate, a rate ≤ 0 or exactly 1 → 422. A rounding residue that unbalances the entry → 422 unless Chift defines a residue rule. The response never pairs EUR amounts with a foreign code (D4).",
+   "label": "A"
   },
   {
    "case": "operation_date in a closed period (on or before LastMiscOperationsClosureDate, or fiscal year IsClosed)",
-   "handling": "Pre-check with fiscal-years.list/info and reject. 'Strictly after the closure date' is a deduction (the closure date is taken as the last closed day). LastMiscOperationsClosureDate is an untyped string|null, so parse it defensively. Horus's own error in this case is undocumented.",
+   "handling": "Pre-check with fiscal-years.list/info before every create, closure dates read fresh, and reject. 'Strictly after the closure date' is a deduction (the closure date is taken as the last closed day). LastMiscOperationsClosureDate is an untyped string|null, so parse it defensively. Horus's own error in this case is undocumented. Whether a VAT closure (LastVatClosureDate) also blocks operations is undocumented; flag it, do not reject on it, until Horus answers.",
    "label": "D"
   },
   {
@@ -673,12 +683,12 @@
   },
   {
    "case": "Horus returns 403 (user/integrator not allowed, e.g. no access to the folder, or an entrepreneur connection trying to post or confirm)",
-   "handling": "Do not retry. Return Chift 400 'folder not accessible with this connection' (D7; the Chift contract declares no 403), appending the Horus Details because a 403 here may also come from user rights. Use ErrorType for classification. The exact causes of a 403 on this endpoint are undocumented.",
+   "handling": "Do not retry. Return Chift 400 'access denied for the connected Horus user (folder or action)' (D7; the Chift contract declares no 403), appending the Horus Details because a 403 here may also come from user rights. Use ErrorType for classification. The exact causes of a 403 on this endpoint are undocumented.",
    "label": "D"
   },
   {
    "case": "Timeout or 500 after POST (the entry may have been created)",
-   "handling": "Never blind-retry (D12). Before retrying: with a known number, search book-entries.list Filter.DocumentNo. With auto-numbering, query book-entries.list (DaybookId + period) or account-histories.list (DaybookIds) with Filter.ModifiedAfter = timestamp recorded just before the POST, and compare date, accounts and amounts. This is a heuristic, because concurrent postings by others are possible. GET /book-entries.info cannot help here, because the Id is lost with the response.",
+   "handling": "Never blind-retry (D12). Before retrying: with a known number, search book-entries.list Filter.DocumentNo. With auto-numbering, query book-entries.list (DaybookId + period) or account-histories.list (DaybookIds) with Filter.ModifiedAfter = timestamp recorded just before the POST, and compare date, accounts and amounts. This is a heuristic, because concurrent postings by others are possible. GET /book-entries.info cannot help here, because the Id is lost with the response. If the check is inconclusive (no number and no unique match on date, accounts and amounts), return an outcome-unknown error instead of retrying.",
    "label": "D"
   },
   {
@@ -693,12 +703,12 @@
   },
   {
    "case": "operation_number already exists in the target daybook within the fiscal year (D12 pre-check match)",
-   "handling": "Reject with 400 'operation_number already exists in this journal and fiscal year' before creating, with the existing book entry Id in the message. Treating daybook + fiscal year as the uniqueness scope is an assumption; Horus does not document Number uniqueness.",
+   "handling": "Reject with 400 (or 409, per C6) 'operation_number already exists in this journal and fiscal year' before creating, with the existing book entry Id in the message. Treating daybook + fiscal year as the uniqueness scope is an assumption; Horus does not document Number uniqueness.",
    "label": "A"
   },
   {
-   "case": "status=posted while the per-consumer 'always push unconfirmed' setting is on",
-   "handling": "Send Confirmed=false (D12). AutoGenerateNumber cannot be used (\"Only works if \"Confirmed\" is set to *true*\"), so without operation_number Number=0 and operation_number is returned null. Return status 'draft' so the response reflects what Horus stored.",
+   "case": "status=posted in review mode (proposed default, D12)",
+   "handling": "Send Confirmed=false. AutoGenerateNumber cannot be used (\"Only works if \"Confirmed\" is set to *true*\"), so without operation_number Number=0 and operation_number is returned null. Return status 'draft' so the response reflects what Horus stored.",
    "label": "D"
   },
   {
@@ -710,23 +720,28 @@
    "case": "Folder has a Mandatory Free schema (CostSectionType 900)",
    "handling": "Free schemas are excluded from Chift analytics in v1 (D8), so no value can be sent for them. Warn. Whether Horus rejects the line is undocumented.",
    "label": "?"
+  },
+  {
+   "case": "Read-back fails after a successful create (GET /book-entries.info times out, returns 404 or 500, or shows another folder)",
+   "handling": "Never re-create and never return an error: the operation exists, and a confirmed one cannot be deleted through the API. Return the Id with the status sent, operation_number = the supplied value (null if Horus generated it) and the echoed lines; log the failure and retry the read-back later with backoff. A folder mismatch on a just-created Id is an alert, not a Chift 400.",
+   "label": "D"
   }
  ],
  "open_questions": [
   {
-   "question": "Can miscellaneous operations be posted in a foreign currency at all, and is the folder base currency always EUR (BE/LU legislations)?",
+   "question": "Is the folder base currency always EUR (BE/LU legislations)? Is a currency field for miscellaneous operations planned? How many decimals do Debit and Credit accept, and is the balance checked on the exact values sent?",
    "for_whom": "Horus",
-   "why": "The misc-op schema has no CurrencyCode/CurrencyRate and folders.info exposes no base currency. This decides whether Chift's required 'currency' field can be anything other than EUR."
+   "why": "The misc-op schema has no CurrencyCode/CurrencyRate, so foreign-currency operations are converted to the folder currency at the supplied rate; this assumes the folder currency is EUR. The connector rounds to 2 decimals before the balance check."
   },
   {
-   "question": "Is Number unique per daybook or fiscal year? Is a format enforced (e.g. YYYYMM + sequence, as in the example 201909001)? What happens on a duplicate?",
+   "question": "Is Number unique per daybook or fiscal year? Is a format enforced (the documented examples differ: 201909001, 1904001, 2301016)? What happens on a duplicate? How does AutoGenerateNumber choose the next number when manually numbered entries exist, and must a manually supplied Number on a confirmed entry follow the daybook's sequence or format?",
    "for_whom": "Horus",
    "why": "Needed to map Chift operation_number safely and to scope the D12 duplicate pre-check (book-entries.list Filter.DocumentNo over the daybook and fiscal year), which currently assumes daybook + fiscal-year uniqueness."
   },
   {
-   "question": "Can every integration or licence set Confirmed=true, or can the fiduciary restrict this? Can a connection authorised by an entrepreneur (IsAccountant=false) post and confirm miscellaneous operations, or will Horus return 403? Does confirmation also lock edits through .update and .lines.update?",
+   "question": "Can every integration or licence set Confirmed=true, or can the fiduciary restrict this? Can a connection authorised by an entrepreneur (IsAccountant=false) post and confirm miscellaneous operations, or will Horus return 403? Does confirmation also lock edits through .update and .lines.update? Is Confirmed the accountant's final validation, or does Verified follow it where an extra verification step is configured?",
    "for_whom": "Horus",
-   "why": "Chift's default status is 'posted', and confirmed entries cannot be deleted through the API. This determines whether status=posted is achievable for SMB-licence connections and how to map a 403."
+   "why": "Chift's default status is 'posted', and confirmed entries cannot be deleted through the API. This determines whether direct posting mode (D12) is available for SMB-licence connections and how to map a 403. (Consolidated in section 9 as the Horus question on confirmation rights.)"
   },
   {
    "question": "Which daybook types does book-entries.miscellaneous-operations.new accept: only 600, or also 610 TemporaryMiscOperation and wages daybooks (IsWages)?",
@@ -749,7 +764,7 @@
    "why": "Needed for pre-validation and for mapping errors to Chift 400/422."
   },
   {
-   "question": "What is the format of LastMiscOperationsClosureDate, and is posting on that exact date allowed? Which fiscal years count as 'future' for IncludeFuture?",
+   "question": "What is the format of LastMiscOperationsClosureDate, and is posting on that exact date allowed? Which fiscal years count as 'future' for IncludeFuture? Does a VAT closure (LastVatClosureDate) block miscellaneous operations dated on or before it?",
    "for_whom": "Horus",
    "why": "Needed for an exact closed-period and fiscal-year pre-check."
   },
@@ -759,19 +774,19 @@
    "why": "Line order must be preserved for Chift line_number. The reference list is used to check that a line read-back is complete, and sideloading would return the entry and its lines in one call without a period (Guide: Sideloading \"If you need it on another endpoint, contact us\")."
   },
   {
-   "question": "Does the book entry Id also change when the accountant edits an entry in Horus Office (not only through API updates)?",
+   "question": "Does the book entry Id also change when the accountant edits an entry in Horus Office (not only through API updates)? Does confirming an entry keep its Id and Number, and does an edited entry keep its DocumentNo?",
    "for_whom": "Horus",
    "why": "Affects the stability of the id returned to Chift and of GET-by-id routes."
   },
   {
-   "question": "D12 maps 'posted' to Confirmed=true by default, with a per-consumer 'always push unconfirmed' setting. Which default fits fiduciary clients on Horus: keep Confirmed=true, or turn 'always push unconfirmed' on by default for Horus connections?",
+   "question": "D12 proposes a posting mode chosen per connection at activation: review (every operation pushed unconfirmed; proposed default) or direct (Confirmed=true for 'posted'). Is that acceptable, and should the mode be settable per folder?",
    "for_whom": "Chift",
-   "why": "Product decision (D12): Horus's API philosophy is accountant review of unconfirmed entries, while Chift defaults to 'posted', and confirmed entries cannot be deleted through the API."
+   "why": "Product decision (D12): Horus pushes API entries unconfirmed by default so the accountant can review them, while Chift defaults to 'posted', and confirmed entries cannot be deleted through the API. (Consolidated as C1.)"
   },
   {
-   "question": "Should non-EUR operations and non-numeric operation_number values be rejected, or handled another way (e.g. the number put in a comment)? Is normalising leading zeros acceptable?",
+   "question": "Is operation_number meant to be the accounting entry number or the client's own reference? Should non-numeric values be rejected, or should confirmed operations be numbered by Horus (AutoGenerateNumber) with the client value kept in the line comment? Is rejecting values with leading zeros acceptable?",
    "for_whom": "Chift",
-   "why": "Chift requires 'currency', and operation_number is a free string. Horus supports neither case."
+   "why": "The Chift field has no description; Horus numbers are numeric, and Horus can number confirmed operations itself. (Consolidated as C7; foreign-currency operations: see the Chift question on foreign-currency operations in section 9.)"
   },
   {
    "question": "Please confirm the D8 convention for this route: analytic_account is the Horus cost-section GUID Id exposed by Get analytic accounts, and Free (900) schemas are neither exposed nor accepted in v1. Is a 400 on an unknown id (and a 422 on an inactive section) acceptable, or should the connector drop the analytic link with a warning?",
@@ -784,16 +799,36 @@
    "why": "The 'only one journal' rule must match what Get journals exposes as non-blocked. Wages daybooks are Type 600 and therefore not blocked."
   },
   {
-   "question": "Does Chift core already validate line balance and partner_id presence, or must the connector do it? Is the D7 mapping of every Horus 403 to 400 'folder not accessible with this connection' acceptable for this route, where a 403 may also come from user rights (confirming entries)?",
+   "question": "Does Chift core already validate line balance and partner_id presence, or must the connector do it? Is the D7 mapping of every Horus 403 to 400 'access denied for the connected Horus user (folder or action)', with the Horus Details, acceptable, given that the Chift contract declares no 403? Should a general line on a customer or supplier concentration account be rejected or accepted with a warning?",
    "for_whom": "Chift",
    "why": "Avoids duplicated or missing validation and fixes the error codes."
+  },
+  {
+   "question": "When an operation arrives in a currency other than EUR with currency_exchange_rate, does Chift core convert the amounts before calling the connector (as other_currencies_allowed = false suggests: 'for Chift to convert the amounts'), or must the connector convert? In which direction is the rate expressed? How should a rounding residue on a balanced operation be absorbed? Should the response echo the original currency and rate, or EUR with rate 1?",
+   "for_whom": "Chift",
+   "why": "Horus stores operations in EUR only; the Chift contract requires the rate for operations in another currency and describes conversion for journals that do not allow other currencies."
+  },
+  {
+   "question": "Do clients expect the literal line_number values (for example 10/20/30) to come back on later reads, or only the line order?",
+   "for_whom": "Chift",
+   "why": "Horus has no writable line number; only the order of the lines is expected to be kept (OrderNo, to confirm with Horus)."
+  },
+  {
+   "question": "Does Chift core retry create calls automatically after a 5xx or timeout? Is a 200 with operation_number null acceptable when Horus generated the number but the read-back failed?",
+   "for_whom": "Chift",
+   "why": "After a successful create the connector returns the operation rather than an error, so that no retry books it twice."
+  },
+  {
+   "question": "Is GET /book-entries.info immediately consistent after book-entries.miscellaneous-operations.new returns its Id?",
+   "for_whom": "Horus",
+   "why": "The read-back runs immediately after the create."
   }
  ],
  "evidence_gaps": [
   "GET /book-entries.info is documented (query Id only; returns DocumentNo, Confirmed, Date, Daybook.Id and AccountHistories Type/Id references) but carries no line content, and it is not in the guide's list of sideloading endpoints. The order of its AccountHistories array, and whether that array includes IsReport lines, are not documented.",
   "No documentation of Number uniqueness, format or sequencing rules per daybook.",
   "No documentation of the folder base currency, or of whether misc operations can carry a foreign currency (only invoices have CurrencyCode).",
-  "No documented Horus error for posting into closed periods or outside any fiscal year; the guide only advises checking closure dates. The format of LastMiscOperationsClosureDate (string|null, no example) and the meaning of 'future' in fiscal-years.list IncludeFuture are not documented.",
+  "No documented Horus error for posting into closed periods or outside any fiscal year; the guide only advises checking closure dates. Whether LastVatClosureDate also blocks miscellaneous operations is not stated. The format of LastMiscOperationsClosureDate (string|null, no example) and the meaning of 'future' in fiscal-years.list IncludeFuture are not documented.",
   "No documentation of mandatory cost-schema enforcement, of CostLines on customer/supplier lines, of free (type 900) schemas in CostLines, or of posting on Inactive cost sections. Free schemas are therefore excluded in v1 (D8).",
   "No documentation of whether Type 1/2 lines must use the company's concentration account, or whether Inactive/IsSummary accounts can be posted to.",
   "No documentation of the 'account requires a vehicle' rule or its error.",
@@ -804,25 +839,26 @@
   "Whether Confirmed=true can be restricted per licence or user type (accountant vs entrepreneur) is not documented.",
   "Whether .update / .lines.update work on confirmed entries is not stated (only delete is explicitly limited to non-confirmed).",
   "book-entries.list states that \"All filters on *strings* are performed using the *contains* clause\" but does not say how the numeric Filter.DocumentNo matches, so the D12 pre-check compares DocumentNo exactly on the client side.",
-  "POST /cost-sections.info takes only an Id and returns no Folder field, and GET /account-histories.info returns no Folder field either. Cross-folder checks (D13) for these objects therefore rely on the folder-scoped cache (D8) and on verified parent references."
+  "POST /cost-sections.info takes only an Id and returns no Folder field, and GET /account-histories.info returns no Folder field either. Cross-folder checks (D13) for these objects therefore rely on the folder-scoped cache (D8) and on verified parent references.",
+  "No documentation of whether a create that timed out on the client side can still be committed afterwards, or of whether book-entries.list and book-entries.info show a new entry as soon as the create call has returned. The duplicate check after a timeout is therefore best effort."
  ],
  "ba_insights": [
   "Terminology map (each meaning taken from the Horus docs):\n- Horus Folder = Chift folder: the legal entity whose books are kept.\n- Horus Company = a third-party legal entity the folder deals with (customer, supplier or beneficiary) = Chift partner. The folder's own entity is the Folder.\n- Daybook = Chift journal: the posting target, chosen by Type; 600 = MiscOperation.\n- Account = ledger account, referenced by its search key.\n- Book entry = the operation header (Chift id).\n- Account history = one entry line.\n- Cost schema = analytic plan; cost section = analytic account.\n- MatchNo = matching (lettering) number.",
   "Why more than one call: Horus create endpoints return only an Id (Guide: Responses & errors \"Requests that create or update an entity return only its identifier\"), while Chift expects the full object back. Horus also references accounts and analytics by search key (Guide: Data model \"Accounts and cost schemas/sections are referenced by search key in posting endpoints\"), while Chift sends an analytic account id. Hence lookup → create → (conditional) read-back. Reference lookups should be cached per folder (Guide: Reading accounting data \"Load it once and cache it per folder\").",
-  "Read-back by Id: GET /book-entries.info?Id= needs only the Id that create returns (no FolderId, DaybookId or period) and gives DocumentNo, Confirmed, Date, Daybook.Id and the line references. That is the cheapest way to return operation_number after auto-numbering. Lines come back only as references, so full line fidelity needs one account-histories.list call (Filter.BookEntryId) or one account-histories.info per line. book-entries.list is kept for duplicate checks, where the Id is unknown. Accept the read-back only if its Folder.Id matches the request folder (D13).",
-  "Sign trap: Chift uses one signed amount (positive = Credit, negative = Debit). Horus uses two non-negative columns, Debit and Credit, which are both mandatory. Horus validates balance ('must be balanced') and, unlike invoices, has no AllowUnbalanced escape hatch on ODs. Validate in the connector to return a clean 422 instead of a Horus 400.",
+  "Read-back by Id: GET /book-entries.info?Id= needs only the Id that create returns (no FolderId, DaybookId or period) and gives DocumentNo, Confirmed, Date, Daybook.Id and the line references. That is the cheapest way to return operation_number after auto-numbering. Lines come back only as references, so full line fidelity needs one account-histories.list call (Filter.BookEntryId) or one account-histories.info per line. book-entries.list is kept for duplicate checks, where the Id is unknown. Use the read-back only if its Folder.Id matches the request folder (D13). A mismatch or a failed read-back is logged and never fails the request, because the operation exists.",
+  "Sign trap: Chift uses one signed amount (positive = Credit, negative = Debit). Horus uses two non-negative columns, Debit and Credit, which are both mandatory. Horus validates balance ('must be balanced') and, unlike invoices, has no AllowUnbalanced escape hatch on ODs. Validate in the connector to return a clean 422 instead of a Horus 400. Normalise amounts once (conversion when needed, 2-decimal rounding) and check the balance on exactly the values sent.",
   "Line-type trap: Horus Type 1/2 lines identify the sub-ledger through CompanyId and, in the guide's example, post on the collective account (400000). Type 3 ignores CompanyId. So Chift 'type' plus 'partner_id' drive two Horus fields, and a partner on a general line is lost. Whether Horus enforces the company's concentration account is undocumented.",
-  "Status trap: Chift defaults to 'posted'; Horus defaults to unconfirmed so that the accountant can review. D12 maps posted → Confirmed=true, which is semantically correct, and adds a per-consumer 'always push unconfirmed' setting, recommended where the accountant must review API entries. Confirmed=true removes the API delete option (delete only for \"non-confirmed, and have been injected through the API\"). With the setting on, AutoGenerateNumber is unavailable, so an unnumbered operation comes back without a number. Which default fits fiduciary clients is a business decision, not a technical detail.",
-  "Numbering: Number is numeric and can be 0 while unconfirmed. AutoGenerateNumber works only with Confirmed=true (Number left at 0). A posted operation without a Chift number therefore needs a read-back to return operation_number. A draft without a number has none to return, and leading zeros in a Chift number are lost.",
+  "Status trap: Chift defaults to 'posted' ('finalized'); Horus pushes API entries unconfirmed so the accountant can review them, and Confirmed means validated by the accountant. The sources do not equate the two. D12 proposes a per-connection posting mode: review (push unconfirmed, proposed default) or direct (Confirmed=true for 'posted'). Confirmed=true removes the API delete option (delete only for \"non-confirmed, and have been injected through the API\"). In review mode AutoGenerateNumber is unavailable, so an unnumbered operation comes back without a number. Decision owner: Chift (C1).",
+  "Numbering: Number is numeric and can be 0 while unconfirmed. AutoGenerateNumber works only with Confirmed=true (Number left at 0). A posted operation without a Chift number in direct mode therefore needs a read-back to return operation_number. An unconfirmed operation (draft, or review mode) without a number has none to return. operation_number is assumed to be the entry number; values with leading zeros, and the value 0, are rejected (proposal, C7).",
   "Id stability: every book-entries.*.update returns a new book entry Id and deletes the attachment. Chift-side storage and GET-by-id routes should also reconcile on daybook + DocumentNo (Guide: Reading accounting data).",
-  "Currency gap: the Chift contract makes 'currency' required, but Horus ODs have no currency field (unlike invoices). Non-EUR operations must be rejected. Together with numeric-only numbering, this is why the route is rated workaround (D11). State this plainly to clients.",
+  "Currency: the Chift contract makes 'currency' required, but Horus ODs have no currency field (unlike invoices), so amounts are stored in EUR. Chift's own contract describes conversion for journals that do not allow other currencies ('an exchange rate must be provided for Chift to convert the amounts to the journal currency'), and Get journals returns other_currencies_allowed = false for Type 600 daybooks. Foreign-currency ODs are therefore converted at the supplied rate, not rejected; whether Chift core or the connector converts is a question for Chift. The original currency is not kept in Horus. State this plainly to clients.",
   "Analytics (D8): Chift analytic_account (a cost-section GUID, 'no distribution possible') becomes one CostLine whose Amount equals the line's debit/credit amount, with Costs = [{SchemaSearchKey, Value}]. Both search keys come from one per-folder cache (cost-schemas.list + cost-sections.list per List-type schema with IncludeInactive=true), never from per-call .info lookups. An inactive section is rejected with 422 and an unknown one with 400. Free (900) schemas are excluded in v1. Multi-dimension or mandatory-schema folders are a known risk to confirm with Horus.",
-  "Fiscal-year pre-check: fiscal-years.list hides future fiscal years by default (IncludeFuture FALSE). Always send IncludeFuture=true, or valid postings into next year's exercise will be wrongly rejected.",
-  "Error handling (per Guide: Responses & errors), branching on ErrorType (\"Use it in your code\"):\n- 400 → do not retry; surface Details (unknown account, unbalanced entry).\n- 401 → refresh the token once.\n- 403 → Chift 400 'folder not accessible with this connection' (D7), with the Horus Details; do not retry.\n- 500 → back off.\nWith no idempotency key, never blind-retry (D12): check for an existing entry before any retry after an uncertain POST, exactly via DocumentNo when known, otherwise heuristically via ModifiedAfter.",
-  "Verdict calibration (D11): 'supported' means one native endpoint plus cached reference data, deterministic transformations, nothing emulated, and only minor optional fields lost. Create miscellaneous operation has the native endpoint, but it is 'workaround' because non-EUR operations and non-numeric numbers cannot be posted, line_number is not stored, and extra per-request calls are needed (a read-back when Horus numbers the entry; the D12 duplicate pre-check when Chift supplies the number). For clients: 'works natively for EUR ODs with numeric or Horus-generated numbers'.",
+  "Fiscal-year pre-check: fiscal-years.list hides future fiscal years by default (IncludeFuture FALSE). Always send IncludeFuture=true, or valid postings into next year's exercise will be wrongly rejected. Read the closure dates fresh at each create (one small call), because the accountant can close a period at any time.",
+  "Error handling (per Guide: Responses & errors), branching on ErrorType (\"Use it in your code\"):\n- 400 → do not retry; surface Details (unknown account, unbalanced entry).\n- 401 → refresh the token once.\n- 403 → Chift 400 'access denied for the connected Horus user (folder or action)' (D7), with the Horus Details; do not retry.\n- 500 → back off.\nWith no idempotency key, never blind-retry (D12): check for an existing entry before any retry after an uncertain POST, exactly via DocumentNo when known, otherwise heuristically via ModifiedAfter, and return an outcome-unknown error when that check is inconclusive.",
+  "Verdict calibration (D11): Create miscellaneous operation has the native endpoint, but it is 'workaround' because of Horus constraints: amounts are stored in EUR only (foreign-currency operations converted at the supplied rate, original currency not kept), numbers must be numeric, and returning a Horus-generated number needs a read-back. The D12 duplicate pre-check is a connector safeguard and line_number (an ordering key) is preserved, so neither is a reason. For clients: 'works natively; stored in EUR with numeric or Horus-generated numbers'.",
   "Journal types (D6): one daybook Type → journal_type table is shared by all routes. 600 → miscellaneous_operation (blocked=false); 610/690/700 → miscellaneous_operation but blocked=true (A, no documented posting endpoint). This route auto-selects and validates only 600, so the 'only one journal' rule counts exactly the journals that Get journals shows as postable.",
   "Cross-folder guard (D13): Horus Id-only endpoints (daybooks.info, companies.info, book-entries.info) take no FolderId, so nothing in the call itself ties the Id to the target folder (D). Always compare Data.Folder.Id with the request's FolderId. For analytics, resolve ids only from the folder-scoped cache, because cost-sections.info returns no Folder.",
-  "Duplicate pre-check (D12): whenever Chift supplies operation_number, look it up with book-entries.list Filter.DocumentNo in the target daybook over the fiscal-year period before creating, and never blind-retry after a timeout. Horus has no idempotency key, so this is the only protection available."
+  "Duplicate pre-check (D12): whenever Chift supplies operation_number, look it up with book-entries.list Filter.DocumentNo in the target daybook over the fiscal-year period before creating, and never blind-retry after a timeout. Horus has no idempotency key, so this is the only protection available, and it is best effort: two identical calls in flight can both pass it, and an operation numbered by Horus has no key to search on."
  ],
  "changes_applied": [
   "D11 – verdict and chift_routes[0].verdict changed from supported to workaround: non-EUR operations and non-numeric operation numbers cannot be posted, line_number is not stored, and extra per-request calls are needed (a read-back when Horus generates the number, and the D12 duplicate pre-check).",

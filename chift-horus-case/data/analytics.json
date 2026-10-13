@@ -5,8 +5,8 @@
    "chift_method": "GET",
    "chift_path": "/consumers/{consumer_id}/accounting/analytic-plans",
    "chift_name": "Get Analytic Plans",
-   "verdict": "supported",
-   "one_line": "Map 1:1 onto POST /cost-schemas.list, read from the single per-folder analytics cache (D8): one call per folder, at most 8 rows, one Horus cost schema = one Chift analytic plan, with id = schema GUID (D8). Free-type schemas (CostSectionType 900) are excluded in v1 (D8). active has no Horus source (constant true). parent_id comes from MasterCostSchema; its meaning is unconfirmed, and null or {} means no parent. folder_id follows the shared D7 rule; page/size are emulated in Chift. Stays supported under D11."
+   "verdict": "workaround",
+   "one_line": "One call to POST /cost-schemas.list, read from the per-folder analytics cache (D8): at most 8 rows, one Horus cost schema = one Chift analytic plan, id = schema GUID. Supported with workaround under the section 2 definitions (low complexity): Chift page/size/total are emulated by slicing the full schema list, and Free-type schemas (CostSectionType 900), which cost-schemas.list does return, are not exposed in v1 (D8, a design choice pending Chift decision C9). active has no Horus source (constant true). parent_id comes from MasterCostSchema (meaning unconfirmed) and is null when it points to a schema that is not returned. folder_id follows the shared D7 rule."
   },
   {
    "chift_method": "GET",
@@ -16,9 +16,9 @@
    "one_line": "Read from the same per-folder cache (D8): POST /cost-schemas.list, then POST /cost-sections.list once per List-type schema with Filter.IncludeInactive=true (N+1, capped at 8), merged and paginated in Chift; id = cost section GUID, analytic_plan = cost schema GUID, Free schemas excluded (D8); folder_id follows D7. balance/credit/debit are not stored on cost sections: they can only be computed by aggregating POST /cost-histories.list over a period the Chift route does not provide, with an unconfirmed sign convention and unclear inclusion of budget or unconfirmed lines. currency has no source ('EUR' only when balances are computed, D4 assumption)."
   }
  ],
- "summary": "Horus calls analytics \"cost\" analytics. A cost schema is an analytical dimension, which is the Chift analytic plan. A cost section is a value inside one schema, which is the Chift analytic account. Guide: Data model: \"a cost schema is an analytical dimension (e.g. DEPARTMENT ). A folder can use up to 8 cost schemas;\" and \"a cost section is a value within a schema (e.g. OFFICE )\".\n\nBoth routes read one per-folder analytics cache (D8): POST /cost-schemas.list {FolderId}, plus POST /cost-sections.list once per \"100: List\" schema with Filter.IncludeInactive=true (cost-sections.list requires both FolderId and CostSchemaId). That is at most 1+8 Horus calls per cache fill. The same cache is the only resolver the write routes (create_invoice, create_misc_operation) use to turn Chift ids into Horus SchemaSearchKey / Value and to reject inactive sections with 422 (D8, D13). Ids are fixed by D8: analytic_plan = cost schema GUID, analytic_account = cost section GUID. \"900: Free\" schemas have no cost sections and are excluded from Chift analytics in v1 (D8). folder_id follows the shared D7 rule.\n\nGet Analytic Plans is a 1:1 read of the cached schema list (supported, D11). Get analytic accounts (multi plans) merges the per-schema section lists and paginates inside Chift (workaround).\n\nCost sections carry no currency and no balance. balance/credit/debit can only be computed by summing POST /cost-histories.list rows per CostSection<OrderNo>. That endpoint needs a month/year period that the Chift route does not carry, it includes unconfirmed entries, it has no ConfirmedOnly filter, and its Balance sign convention is undocumented.\n\nBoth routes depend on the folder's Analytics module (WithAnalytics on folders.list/folders.info).\n\nMain risks:\n- the policy for balances (0, null or a computed period)\n- loss of Free-type dimensions in v1 (D8) and of the schema/section hierarchy\n- null and {} values in responses\n- cache staleness: the cost endpoints have no ModifiedAfter filter, and the write routes depend on the same cache\n- the docs conflict on how far a SearchKey is unique (per folder in Guide: Data model, \"linked to this cost schema\" in the posting reference). GUID ids (D8) keep posting unambiguous, but code alone may be ambiguous",
+ "summary": "Horus calls analytics \"cost\" analytics. A cost schema is an analytical dimension, which is the Chift analytic plan. A cost section is a value inside one schema, which is the Chift analytic account. Guide: Data model: \"a cost schema is an analytical dimension (e.g. DEPARTMENT ). A folder can use up to 8 cost schemas;\" and \"a cost section is a value within a schema (e.g. OFFICE )\".\n\nBoth routes read one per-folder analytics cache (D8): POST /cost-schemas.list {FolderId}, plus POST /cost-sections.list once per \"100: List\" schema with Filter.IncludeInactive=true (cost-sections.list requires both FolderId and CostSchemaId). That is at most 1+8 Horus calls per cache fill. The same cache is the only resolver the write routes (create_invoice, create_misc_operation) use to turn Chift ids into Horus SchemaSearchKey / Value and to reject inactive sections with 422 (D8, D13). Ids are fixed by D8: analytic_plan = cost schema GUID, analytic_account = cost section GUID. \"900: Free\" schemas have no cost sections and are excluded from Chift analytics in v1 (D8, a design choice pending C9: cost-schemas.list does return them). folder_id follows the shared D7 rule, including the rejection of a folder_id outside the activation selection.\n\nGet Analytic Plans reads the cached schema list in one call. It is a low-complexity workaround because paging is emulated and Free-type schemas are not exposed in v1 (C9). Get analytic accounts (multi plans) merges the per-schema section lists and paginates inside Chift (workaround).\n\nCost sections carry no currency and no balance. balance/credit/debit can only be computed by summing POST /cost-histories.list rows per CostSection<OrderNo>. That endpoint needs a month/year period that the Chift route does not carry, it includes unconfirmed entries, it has no ConfirmedOnly filter, and its Balance sign convention is undocumented.\n\nBoth routes depend on the folder's Analytics module (WithAnalytics on folders.list/folders.info).\n\nMain risks:\n- the policy for balances (0, null or a computed period)\n- loss of Free-type dimensions in v1 (D8) and of the schema/section hierarchy\n- null and {} values in responses\n- cache staleness: the cost endpoints have no ModifiedAfter filter, and the write routes depend on the same cache\n- the docs conflict on how far a SearchKey is unique (per folder in Guide: Data model, \"linked to this cost schema\" in the posting reference). GUID ids (D8) keep posting unambiguous, but code alone may be ambiguous",
  "verdict": "workaround",
- "verdict_rationale": "Calibrated with D11. The plans route has a native equivalent (cost-schemas.list, served from cached reference data) with deterministic field transformations, so it is \"supported\". D11 explicitly keeps analytic plans supported, and slicing at most 8 rows is trivial. The multi-plan accounts route is feasible but needs:\n(a) several Horus calls: 1 schema list plus up to 8 section lists. D: cost-sections.list requires \"CostSchemaId *\", and F: \"A folder can use up to **8** different cost schemas\".\n(b) pagination emulated in Chift. D: no Horus list endpoint documents paging parameters.\n(c) fields with no native source. currency has no source on sections. balance/credit/debit are absent from cost sections and can only be derived from cost-histories.list over a period chosen by policy.\n\nIn addition, Free-type (\"900: Free\") dimensions are excluded from Chift analytics in v1 (D8), a capability loss for folders that use them. Under D11 (extra per-request calls, emulated pagination, lost fields), the accounts route is \"workaround\", so the combined route group is \"workaround\".",
+ "verdict_rationale": "Calibrated with D11, which applies the section 2 definitions identically to every route, without exception: both routes are workarounds. Plans: the route has a native equivalent (cost-schemas.list, one call served from the D8 cache) with deterministic field transformations, but Chift paging is emulated (trivially, at most 8 rows), and Free-type (900) schemas are not returned pending C9. This is a design choice, because cost-schemas.list returns them. Complexity: Low. The multi-plan accounts route is feasible but needs:\n(a) several Horus calls: 1 schema list plus up to 8 section lists. D: cost-sections.list requires \"CostSchemaId *\", and F: \"A folder can use up to **8** different cost schemas\".\n(b) pagination emulated in Chift. D: no Horus list endpoint documents paging parameters.\n(c) fields with no native source. currency has no source on sections. balance/credit/debit are absent from cost sections and can only be derived from cost-histories.list over a period chosen by policy.\n\nIn addition, Free-type (\"900: Free\") dimensions are excluded from Chift analytics in v1 (D8), a capability loss for folders that use them. Under D11 (extra per-request calls, emulated pagination, lost fields), the accounts route is \"workaround\", so the combined route group is \"workaround\".",
  "horus_endpoints": [
   {
    "method": "POST",
@@ -118,17 +118,17 @@
   }
  ],
  "call_sequence": [
-  "GET analytic-plans, step 1: resolve the Horus FolderId with the shared D7 rule. Use query folder_id (the Horus folder GUID exposed by the Chift folders route) when it is given. Otherwise: if exactly one folder was selected at activation, use it; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; in every other case return Chift 400 'folder_id required'. Every Horus cost endpoint requires FolderId.",
+  "GET analytic-plans, step 1: resolve the Horus FolderId with the shared D7 rule. Use query folder_id (the Horus folder GUID exposed by the Chift folders route) when it is given. Otherwise: if exactly one folder was selected at activation, use it; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; in every other case return Chift 400 'folder_id required'. A supplied folder_id outside the activation selection → 400 'folder not selected for this connection' before any Horus call (D7). Every Horus cost endpoint requires FolderId.",
   "Step 2 (cached per folder): GET /folders.info?Id={FolderId} (or reuse the folders.list cache) and read Data.WithAnalytics. If false, return {items: [], total: 0, page, size} and make no further calls.",
   "Step 3: read the D8 per-folder analytics cache. If it is cold or expired, fill it: POST /cost-schemas.list {\"FolderId\": FolderId} (at most 8 schemas), then the section lists of accounts step 4, so every analytic route (and the write routes) share one snapshot.",
-  "Step 4: drop Free-type schemas (CostSectionType 900). They are excluded from Chift analytics in v1 (D8). Log a warning for folders that have them, so support can explain the missing dimension.",
-  "Step 5: map each remaining schema to an AnalyticPlanItem: id=Id (schema GUID, D8), name=Heading, active=true, parent_id=MasterCostSchema.Id. Treat null, {} or a missing Id as no parent. Sort by OrderNo, then slice by page/size in Chift; total = count of List schemas.",
+  "Step 4: drop Free-type schemas (CostSectionType 900). They are excluded from Chift analytics in v1 (D8; a design choice pending C9, since cost-schemas.list returns them). Log a warning for folders that have them, so support can explain the missing dimension.",
+  "Step 5: map each remaining schema to an AnalyticPlanItem: id=Id (schema GUID, D8), name=Heading, active=true, parent_id=MasterCostSchema.Id. Treat null, {}, a missing Id, or an Id that is not among the returned List schemas (e.g. an excluded Free schema) as no parent. Sort by OrderNo, then slice by page/size in Chift; total = count of List schemas.",
   "GET analytic-accounts/multi-analytic-plans, steps 1-3: same as above (D7 folder resolution, WithAnalytics gate, D8 cache with cost-schemas.list). Reuse the cached snapshot when possible.",
   "Step 4 (cache fill, D8): for each schema with CostSectionType = 100 (List), call POST /cost-sections.list {\"FolderId\", \"CostSchemaId\": schema.Id, \"Filter\": {\"IncludeInactive\": true}}. That is N+1 with N <= 8. Calls can run in parallel, but keep concurrency modest because no rate limits are documented. Store the result in the single per-folder cache (Guide: Reading accounting data: \"Load it once and cache it per folder\"); create_invoice and create_misc_operation read the same snapshot (D8).",
   "Step 5 (optional, only if balances are required; the policy must be agreed with Chift): (a) POST /fiscal-years.list {FolderId, Filter: {Dates: [today]}} and convert StartDate/EndDate (date-time) into StartMonth/StartYear/EndMonth/EndYear. (b) Optionally POST /daybooks.list {FolderId, Filter: {Types: [900]}} (cached) to collect the Budget daybook Ids. (c) POST /cost-histories.list {FolderId, StartMonth, StartYear, EndMonth, EndYear, Filter: {ExcludedDaybookIds: budget Ids}} with the header Content-Encoding: gzip.",
   "Step 6 (aggregation): map OrderNo to schema using Data.CostSchemas[] from the same cost-histories.list response, so the join cannot drift from a stale cached schema list. For each row and each N in 1..8 where CostSectionN is not empty (not null, not {}, and has an Id), add Debit and Credit (null = 0) and Balance to section CostSectionN.Id. A row counts once in every schema it touches; never sum across schemas. Ignore references whose Id is not in the D8 cache (for example Free-schema values, excluded by D8).",
   "Step 7: build the AnalyticAccountItemOutMultiAnalyticPlans rows: id=Id (section GUID, D8), code=SearchKey, name=Heading, active=(Inactive !== true), analytic_plan=CostSchema.Id (schema GUID, D8), currency='EUR' when balances were computed in step 6 (D4 assumption) and null otherwise, balance/credit/debit from step 6 or the agreed default. Sort deterministically (schema OrderNo, then SearchKey), then slice by page/size; total = merged count (List schemas only).",
-  "Error handling (every Horus call): 401: refresh the access token once and retry. 400: do not retry; log Details. 500: retry with exponential backoff (Guide: Responses & errors). A persistent Horus 403 becomes Chift 400 'folder not accessible with this connection' (D7). A persistent 404 (unknown FolderId) becomes a Chift 400 ChiftError naming the folder. Chift 400 is the only non-validation error both Chift routes declare.",
+  "Error handling (every Horus call): 401: refresh the access token once and retry. 400: do not retry; log Details. 500: retry with exponential backoff (Guide: Responses & errors). A persistent Horus 403 becomes Chift 400 'access denied for the connected Horus user (folder or action)' with the Horus Details (D7). A persistent 404 (unknown FolderId) becomes a Chift 400 ChiftError naming the folder. Chift 400 is the only non-validation error both Chift routes declare.",
   "Cache refresh (D8, D13): use a short TTL, plus one full refresh of the folder cache when a write route meets an unknown plan/account GUID; if it is still unknown after the refresh, reject. Never fall back to cost-schemas.info / cost-sections.info."
  ],
  "field_mappings": [
@@ -148,7 +148,7 @@
    "chift_required": false,
    "horus_source": "none",
    "classification": "CHIFT_INTERNAL",
-   "rule": "Pagination emulation: fetch the full schema list (at most 8 rows) and slice in Chift. No Horus .list endpoint documents a paging parameter.",
+   "rule": "Pagination emulation: fetch the full schema list (at most 8 rows) and slice in Chift. No Horus .list endpoint documents a paging parameter. This emulation is one reason the route is a workaround (low complexity).",
    "label": "D",
    "evidence": "POST /cost-schemas.list body has only FolderId*; no page/limit/offset parameter anywhere in the reference (grep)."
   },
@@ -168,7 +168,7 @@
    "chift_required": false,
    "horus_source": "POST /cost-schemas.list → FolderId",
    "classification": "DIRECT",
-   "rule": "Pass the Horus folder GUID as FolderId. If folder_id is absent, apply the shared D7 rule: use the single folder selected at activation; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; otherwise return 400 'folder_id required'. FolderId is mandatory in Horus, and the D8 cache is keyed by it.",
+   "rule": "Pass the Horus folder GUID as FolderId. If folder_id is absent, apply the shared D7 rule: use the single folder selected at activation; if no selection is stored, use the single folder returned by POST /folders.list {Mode: 0}; otherwise return 400 'folder_id required'. FolderId is mandatory in Horus, and the D8 cache is keyed by it. A folder_id outside the activation selection is rejected with 400 'folder not selected for this connection' before any Horus call (D7, Chift FolderItem.selected).",
    "label": "D",
    "evidence": "POST /cost-schemas.list body \"FolderId *: string\". Guide: Data model: \"A folder is the accounting record of one company... Almost every endpoint requires a FolderId .\" Chift: \"A folder represents a legal entity within the system.\" and \"Required when the multiple folders feature is enabled.\" POST /folders.list → Mode \"`0`: All folders\"."
   },
@@ -208,7 +208,7 @@
    "chift_required": false,
    "horus_source": "POST /cost-schemas.list → Data[].MasterCostSchema.Id",
    "classification": "TRANSFORM",
-   "rule": "Map the type/id reference object to its Id string. Return null when MasterCostSchema is null, an empty object {} (official examples use {} for empty references) or has no Id. Whether 'master' means a hierarchical parent is not documented.",
+   "rule": "Map the type/id reference object to its Id string. Return null when MasterCostSchema is null, an empty object {} (official examples use {} for empty references) or has no Id. Whether 'master' means a hierarchical parent is not documented. Also return null when MasterCostSchema points to a schema that is not returned (a Free-type schema excluded under D8), so parent_id never references a hidden plan. Whether a MasterCostSchema can be a Free-type schema is undocumented (H13).",
    "label": "A",
    "evidence": "MasterCostSchema: object|null \"Master cost schema, can be NULL\" { Type: \"CostSchemas\", Id }; raw export cost-sections.list example: \"MasterCostSection\": {}"
   },
@@ -268,7 +268,7 @@
    "chift_required": false,
    "horus_source": "POST /cost-schemas.list → FolderId; POST /cost-sections.list → FolderId; (POST /cost-histories.list → FolderId)",
    "classification": "DIRECT",
-   "rule": "Pass the same folder GUID to every call. If folder_id is absent, apply D7: the single folder selected at activation; else, with no stored selection, the single folder from POST /folders.list {Mode: 0}; else 400 'folder_id required'. The D8 cache is keyed by this FolderId.",
+   "rule": "Pass the same folder GUID to every call. If folder_id is absent, apply D7: the single folder selected at activation; else, with no stored selection, the single folder from POST /folders.list {Mode: 0}; else 400 'folder_id required'. The D8 cache is keyed by this FolderId. A folder_id outside the activation selection is rejected with 400 'folder not selected for this connection' before any Horus call (D7, Chift FolderItem.selected).",
    "label": "D",
    "evidence": "cost-sections.list \"FolderId *: string\", \"CostSchemaId *: string\"; Chift folder_id: \"Required when the multiple folders feature is enabled.\""
   },
@@ -418,7 +418,7 @@
  "limitations": [
   {
    "description": "Schemas with CostSectionType \"900: Free\" have no enumerable cost sections. Their values are typed as \"100: Characters\", \"200: Digits\" or \"300: Date\", optionally with a mask. cost-sections.new says the parent schema \"must be of type *List* (CostSectionType = 100)\".",
-   "impact": "They are excluded from Chift analytics in v1 (D8): not returned by Get analytic plans/accounts, not accepted on write, and omitted on read with a warning. A folder that analyses by a Free dimension loses that dimension in Chift. Free values probably appear only in cost histories as CostSection<N>SearchKey strings (A).",
+   "impact": "They are excluded from Chift analytics in v1 (D8, a design choice pending C9; cost-schemas.list does return them): not returned by Get analytic plans/accounts, not accepted on write, and omitted on read with a warning. A folder that analyses by a Free dimension loses that dimension in Chift. Free values probably appear only in cost histories as CostSection<N>SearchKey strings (A).",
    "label": "D"
   },
   {
@@ -433,7 +433,7 @@
   },
   {
    "description": "No pagination parameters on any Horus list endpoint.",
-   "impact": "Chift must fetch everything and slice. total is only known after the full fetch.",
+   "impact": "Chift must fetch everything and slice. total is only known after the full fetch. For the plans route this emulation is trivial (at most 8 rows) but still makes it a workaround under the section 2 definitions.",
    "label": "D"
   },
   {
@@ -520,7 +520,7 @@
   },
   {
    "case": "Hierarchical sections (MasterCostSection / child CostSections) or a schema with MasterCostSchema set",
-   "handling": "Flatten the sections. Map MasterCostSchema.Id to parent_id with a caveat. Ask Horus whether 'master' means parent, and whether master sections can be posted to.",
+   "handling": "Flatten the sections. Map MasterCostSchema.Id to parent_id with a caveat; return null when it points to a schema that is not returned (e.g. an excluded Free schema). Ask Horus whether 'master' means parent, and whether master sections can be posted to.",
    "label": "A"
   },
   {
@@ -550,7 +550,7 @@
   },
   {
    "case": "Horus 401/403/404/500 on cost endpoints",
-   "handling": "401: refresh the access token once and retry. 400: do not retry. 500: retry with exponential backoff (Guide: Responses & errors). A persistent 403 (user has no access to the folder; Guide: Data model: \"What a user can see through the API depends on their access in Horus.\") becomes Chift 400 'folder not accessible with this connection' (D7). A persistent 404 becomes a Chift 400 ChiftError naming the folder.",
+   "handling": "401: refresh the access token once and retry. 400: do not retry. 500: retry with exponential backoff (Guide: Responses & errors). A persistent 403 (user has no access to the folder; Guide: Data model: \"What a user can see through the API depends on their access in Horus.\") becomes Chift 400 'access denied for the connected Horus user (folder or action)' with the Horus Details (D7). A persistent 404 becomes a Chift 400 ChiftError naming the folder.",
    "label": "D"
   },
   {
@@ -561,6 +561,11 @@
   {
    "case": "folder_id missing while the consumer has several Horus folders",
    "handling": "Apply D7: if exactly one folder was selected at activation, use it; if no selection is stored, use the single folder from POST /folders.list {Mode: 0}; otherwise return Chift 400 'folder_id required'. Horus cannot be called without FolderId.",
+   "label": "D"
+  },
+  {
+   "case": "folder_id supplied but not selected at activation",
+   "handling": "Rejected with 400 'folder not selected for this connection' before any Horus call (D7), unless Chift confirms that its platform already enforces FolderItem.selected (C12).",
    "label": "D"
   },
   {
@@ -575,7 +580,7 @@
   },
   {
    "case": "Free-type schema flagged Mandatory",
-   "handling": "Chift cannot send a value for it in v1 (D8). If Horus enforces Mandatory on posting, analytic writes in that folder would fail. The meaning of Mandatory is undocumented, so ask Horus and flag such schemas in onboarding checks.",
+   "handling": "Chift cannot send a value for it in v1 (D8). If Horus enforces Mandatory on posting, analytic writes in that folder would fail. The meaning of Mandatory is undocumented, so ask Horus (H13) and flag such schemas in onboarding checks. Proposal for v1: analytic writes in such a folder are rejected with 422 'analytics not supported for this folder'.",
    "label": "?"
   }
  ],
@@ -586,9 +591,9 @@
    "why": "Decides whether the connector must pre-check WithAnalytics and how errors are mapped."
   },
   {
-   "question": "Does MasterCostSchema mean a hierarchical parent (sub-dimension) or another dependency? Does cost-sections.list return child sections (CostSections) at top level, and can master sections be used in CostLines?",
+   "question": "Does MasterCostSchema mean a hierarchical parent (sub-dimension) or another dependency, and can it point to a Free-type schema? Does cost-sections.list return child sections (CostSections) at top level, and can master sections be used in CostLines?",
    "for_whom": "Horus",
-   "why": "Needed to fill parent_id correctly and to avoid listing accounts that cannot be posted to."
+   "why": "Needed to fill parent_id correctly (it is set to null when it points to a schema that is not returned) and to avoid listing accounts that cannot be posted to."
   },
   {
    "question": "Guide: Data model says SearchKey is \"unique within the folder\", but invoices.*.new Costs[].Value is \"The search key of an existing cost section, linked to this cost schema\". Is a cost section SearchKey unique per folder or only per schema? Can accountants edit the SearchKeys of schemas and sections?",
@@ -631,9 +636,9 @@
    "why": "The D8 cache feeds both the analytics reads and the write-route validation (inactive → 422). A reliable refresh trigger avoids stale ids and false rejections."
   },
   {
-   "question": "D8 excludes Horus Free-type schemas (CostSectionType 900) from Chift analytics in v1: not listed by analytic-plans/accounts, not accepted on write, omitted on read with a warning. Is that acceptable for v1, and should a later version expose them (for example as plans whose values are free text rather than analytic_account ids)?",
+   "question": "Should Get analytic plans list Horus Free-type dimensions (CostSectionType 900), which have no enumerable analytic accounts and are not accepted on write in v1, or hide them as proposed (D8, C9)? Should a later version expose them, for example as plans whose values are free text rather than analytic_account ids?",
    "for_whom": "Chift",
-   "why": "AnalyticPlanItem has no type field and analytic_account expects an id, so Free values do not fit the current model. Clients that analyse by a Free dimension lose it."
+   "why": "AnalyticPlanItem has no type field and analytic_account expects an id, so Free values do not fit the current model. Clients that analyse by a Free dimension lose it. Hiding them is a design choice (cost-schemas.list returns them), and it is one reason Get analytic plans is a workaround."
   },
   {
    "question": "For balance/credit/debit when the target has no native balance per analytic account: return the default 0, null, or a value computed over the current fiscal year? Confirmed-only or all entries? What sign convention does Chift expect for balance (the spec gives no description)?",
@@ -667,21 +672,21 @@
   "Vocabulary first: in Horus, 'cost' means analytics, not expenses. Guide: Data model: \"a cost schema is an analytical dimension (e.g. DEPARTMENT ). A folder can use up to 8 cost schemas; a cost section is a value within a schema (e.g. OFFICE ); cost histories are the analytical distribution of account history lines\". So cost schema = Chift analytic plan, cost section = Chift analytic account, and cost histories = analytic postings.",
   "Terminology trap: Horus 'accounts' with AccountCategory \"1200: CostInc - \\\"Compte analytique de produit\\\"\" / \"1300: CostExp - \\\"Compte analytique de charge\\\"\" are general-ledger accounts in the chart of accounts (accounts.list), not cost sections. They must not be returned as Chift analytic accounts. Likewise, account-balance.list is a general-ledger trial balance with no cost dimension. Both were considered and rejected.",
   "Why multi-call: Chift wants one flat list of 'all analytic accounts of all analytic plans', but Horus nests sections under schemas, and cost-sections.list requires CostSchemaId. So the connector lists the schemas, then makes one call per schema. The N+1 is bounded by the documented 8-schema limit (at most 9 calls), and Horus itself recommends caching analytics as reference data per folder.",
-  "Not every schema is a list: CostSectionType \"100: List - expected values are cost sections\" versus \"900: Free - expected values are free, eventually based on a mask and a type\". Only List schemas can be enumerated as accounts. D8 excludes Free schemas from Chift analytics in v1, and a client that analyses by a Free dimension must be told this up front.",
+  "Not every schema is a list: CostSectionType \"100: List - expected values are cost sections\" versus \"900: Free - expected values are free, eventually based on a mask and a type\". Only List schemas can be enumerated as accounts. D8 excludes Free schemas from Chift analytics in v1 (a design choice pending C9), and a client that analyses by a Free dimension must be told this up front.",
   "Balances are not master data in Horus. They come from postings (cost histories), exist only for a month/year period, include unconfirmed entries by default, and have an undocumented sign convention. The Chift route has no period parameter. Be explicit with the client: either Chift computes them over a documented default period (at least one extra heavy call; confirmed-only needs account-histories.list), or it returns the default, which must not be read as a real zero.",
   "Remember IncludeInactive: Horus hides inactive sections by default (\"*FALSE* by default\"). Forgetting the filter breaks the 'all accounts' contract, makes active=false impossible to observe, and would stop the write routes from returning a clear 422 for an inactive section (D8).",
   "Code defensively against the documented examples, not only the schema. Inactive is typed boolean but shown as null, and empty references are shown as {}, not null. So use active = (Inactive !== true) and treat null, {} or a missing Id as 'no reference'.",
   "Identifiers are fixed by D8: GUID for plans and accounts, SearchKey only as code. Horus posting endpoints reference analytics by search key (CostLines.Costs[].SchemaSearchKey + Value), while .info/.list endpoints use GUIDs, and the docs disagree on whether a section SearchKey is unique per folder or per schema. A GUID resolves a lone misc-operation analytic_account to its schema without ambiguity. Because AnalyticPlanItem has no code field, the plan SearchKey is invisible to Chift users.",
   "One cache, many routes (D8): the two analytics list routes and the write routes (create_invoice, create_misc_operation) share one per-folder snapshot of schemas and sections, including inactive ones. The write routes never call cost-*.info, so a GUID from another folder cannot slip through (D13); cost-sections.info would not even tell you its folder. The trade-off is freshness: refresh once on a miss, then reject.",
-  "Folder resolution is the same on every route (D7): use folder_id when it is given; otherwise the single folder selected at activation; otherwise the single folder that POST /folders.list {Mode: 0} returns; otherwise 400 'folder_id required'. A Horus 403 becomes 400 'folder not accessible with this connection'. Explaining it once in the report avoids route-by-route surprises for the client.",
+  "Folder resolution is the same on every route (D7): use folder_id when it is given; otherwise the single folder selected at activation; otherwise the single folder that POST /folders.list {Mode: 0} returns; otherwise 400 'folder_id required'. A supplied folder_id outside the activation selection is rejected with 400 before any Horus call. A Horus 403 becomes 400 'access denied for the connected Horus user (folder or action)' with the Horus Details. Explaining it once in the report avoids route-by-route surprises for the client.",
   "Rounding is a write-side concern, but it relies on this cache (D8). When Chift sends analytic percentages, the write routes convert them to amounts with the largest-remainder method, so the cost lines add up exactly to the line BaseAmount, as Horus requires (Guide: Posting sales & purchase invoices: \"The sum of a line's cost lines must equal its BaseAmount\"). General knowledge (a method, not a Horus fact): round every share down, then give the leftover cents to the shares with the largest remainders.",
   "Module gating: analytics is an optional folder module (WithAnalytics on folders.list/folders.info). A robust connector checks it once per folder and returns empty results, rather than calling endpoints whose behaviour on non-analytics folders is undocumented.",
-  "Pagination is a Chift concern: Horus lists return everything, so page/size/total are computed after the merge. Sort deterministically (schema OrderNo, then SearchKey) so pages are stable.",
+  "Pagination is a Chift concern: Horus lists document no paging parameter, so they are expected to return everything (D) and page/size/total are computed after the merge. Even with at most 8 schemas, this emulation makes Get analytic plans a workaround under the section 2 definitions. Sort deterministically (schema OrderNo, then SearchKey) so pages are stable.",
   "Hierarchy is partly lost. Chift supports parent_id on plans (mapped from MasterCostSchema; semantics to confirm) but has no parent on accounts, while Horus has master/child cost sections and categories.",
   "General accounting knowledge (background only, not a source of facts): analytic (cost) accounting gives a second, management view of P&L amounts by dimension, such as department or project. That is why Horus distributes general-ledger lines (account histories) into cost histories, with up to one section per schema on each distribution row."
  ],
  "changes_applied": [
-  "D7 (folder_id rule): rewrote both query:folder_id field mappings, call-sequence step 1, the FolderId and Mode rows of horus_required_without_chift_source, and the 'folder_id missing' edge case to the shared rule. That rule is: folder_id, else the single activation folder, else the single folder from POST /folders.list {Mode: 0}, else 400 'folder_id required'. The folders.list endpoint row now describes the D7 fallback (pattern alternative → lookup, cardinality and evidence updated with the Mode \"`0`: All folders\" text). Horus 403 → Chift 400 'folder not accessible with this connection' in the error-handling step and the 401/403/404/500 edge case.",
+  "D7 (folder_id rule): rewrote both query:folder_id field mappings, call-sequence step 1, the FolderId and Mode rows of horus_required_without_chift_source, and the 'folder_id missing' edge case to the shared rule. That rule is: folder_id, else the single activation folder, else the single folder from POST /folders.list {Mode: 0}, else 400 'folder_id required'. The folders.list endpoint row now describes the D7 fallback (pattern alternative → lookup, cardinality and evidence updated with the Mode \"`0`: All folders\" text). Horus 403 → Chift 400 'access denied for the connected Horus user (folder or action)' in the error-handling step and the 401/403/404/500 edge case.",
   "D8 (one cache): cost-schemas.list and cost-sections.list are now described as the single per-folder analytics cache, with cost-sections.list always called with Filter.IncludeInactive=true. The write routes resolve SchemaSearchKey/Value only from this cache (endpoint roles and cardinalities, summary, call-sequence steps 3, 6 and 4 of the accounts route). Added a final call-sequence step for cache refresh (TTL plus one refresh on a miss, never .info).",
   "D8 (ids): analytic_plan = cost schema GUID and analytic_account = cost section GUID are now the decided convention in the plans id, accounts id, analytic_plan and code mappings, the id-convention limitation (description and impact rewritten), the duplicate-SearchKey edge case, the SearchKey open question 'why' and the identifiers ba_insight. The Chift GUID open question is reworded as a confirmation of D8.",
   "D8 (inactive sections): the accounts active mapping, the IncludeInactive row, the inactive-sections edge case and the IncludeInactive ba_insight now state that the write routes reject inactive sections with 422 using the same cached flag.",
@@ -692,7 +697,8 @@
   "D15 (endpoint count): '71 reference endpoints' → '72' in the cost-distribution-key limitation. The evidence gap that called book-entries.info undocumented is corrected (it is documented, one of the 72 endpoints, not needed here), and Register your integration and webhook documentation were added to the list of missing material.",
   "D4 alignment (one currency assumption): the accounts currency mapping changed from NA ('null or EUR') to CONSTANT 'EUR' when balances are computed and null otherwise, never a foreign code. Label stays A, with the Guide: Data model cost-histories quote added. The change is also applied to call-sequence step 7, the no-balance limitation, the chift_routes one_line and the currency open question.",
   "New items required by the decisions: a cache-freshness limitation (D8), a Mandatory Free-schema edge case (?), a Horus open question on a change signal for cost schemas/sections, and an evidence gap on the missing change-tracking filter. The IsLocked/IsDefault/Mandatory open question was extended to Mandatory Free schemas. New ba_insights cover the shared cache (D8/D13) and the D7 folder rule.",
-  "Checked and not applicable to these read routes: D1, D2, D3, D5, D9, D10, D12, D14. D6 is consistent: the Budget 900 / CostMiscOperation 700 daybook names on the balance path match the D6 table, and these routes expose no journal_type. All other rows are kept verbatim. rejected_findings is left empty as instructed; no decision was technically impossible for this route."
+  "Checked and not applicable to these read routes: D1, D2, D3, D5, D9, D10, D12, D14. D6 is consistent: the Budget 900 / CostMiscOperation 700 daybook names on the balance path match the D6 table, and these routes expose no journal_type. All other rows are kept verbatim. rejected_findings is left empty as instructed; no decision was technically impossible for this route.",
+  "Review revision (LD1, supersedes item 7 for plans): Get Analytic Plans is now 'workaround' (low complexity): paging is emulated and Free-type schemas are hidden by design pending C9. parent_id is null when it points to a schema that is not returned (H13). A folder_id outside the activation selection is rejected with 400 before any Horus call (D7). Horus 403 → 'access denied for the connected Horus user (folder or action)' with Details. The Mandatory Free-schema edge case carries the v1 422 proposal."
  ],
  "rejected_findings": []
 }
