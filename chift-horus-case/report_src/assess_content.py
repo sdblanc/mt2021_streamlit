@@ -59,8 +59,9 @@ def answer(routes):
         parts.append(f'{WORDS[len(by["Not yet concluded"])]} cannot be concluded yet ({_names(by["Not yet concluded"])}). ')
     parts.append('Behaviour on large folders cannot be concluded from the documentation for any list route.')
     return ''.join(parts)
-TILE_NOTE = ('Each route is rated by the weakest point that materially affects it. "Confirmed" means the documentation shows Horus can do what the route needs; '
-             'the remaining work is mapping. The other levels are explained in section 3.')
+TILE_NOTE = ('Each route is rated on functional feasibility, by the weakest point that materially affects it (levels explained in section 3). '
+             '"Confirmed" means the documentation shows Horus can do what the route needs; documented limitations still apply. '
+             'Performance on large folders is a separate, cross-route point that cannot be concluded for any list route without testing.')
 KEY_MESSAGES = [
     '<b>One Chift call often means several Horus calls.</b> Horus needs its own references (journal, partner, account and analytic codes), and a create returns only an id. '
     'The connector therefore looks up reference data, cached per folder, and reads records back. Horus has no endpoint that lists invoices, so invoice retrieval is rebuilt from ledger data.',

@@ -59,7 +59,7 @@ def summary(D):
     routes = D['routes']
     counts = {k: sum(1 for r in routes if r['feasibility'] == k) for k in FZ}
     h = [f'<p class="lede">{T.answer(routes)}</p>']
-    tiles = ''.join(f'<div class="tile"><div class="n">{counts[k]}</div><div class="t">{fz(k)}</div></div>' for k in FZ)
+    tiles = ''.join(f'<div class="tile"><div class="n">{counts[k]}</div><div class="t">{fz(k)}</div></div>' for k in FZ if counts[k])
     tiles += f'<div class="tile"><div class="n">{len(routes)}</div><div class="t">Chift routes analysed (10 in Task A, outstanding items in Task B)</div></div>'
     h.append(f'<div class="overview">{tiles}</div>')
     h.append(f'<p class="small">{T.TILE_NOTE}</p>')
