@@ -91,15 +91,19 @@ def routes(D):
     h.append('<div class="table-wrap"><table class="overview-table"><thead><tr><th>Chift route</th><th>Horus endpoint(s)</th><th>How it works</th><th>Feasibility</th></tr></thead><tbody>')
     for i, r in enumerate(rs):
         main = '<br>'.join(f'<b>{esc(e)}</b>' for e in r['horus_main'])
-        sup = '<br>'.join(esc(e) for e in r['horus_support'])
+        n = len(r['horus_support'])
+        sup = f'<span class="sub">+ {n} supporting call{"s" if n != 1 else ""} (<a href="#rt-{i}">details</a>)</span>' if n else ''
         h.append(f'<tr><td><a href="#rt-{i}"><b>{esc(r["route"])}</b></a><span class="sub mono">{esc(r["chift"])}</span></td>'
-                 f'<td class="eps">{main}{"<br>" + sup if sup else ""}</td><td>{inline(r["how_it_works"])}</td><td>{fz(r["feasibility"], True)}</td></tr>')
+                 f'<td class="eps">{main}{sup}</td><td>{inline(r["how_it_works"])}</td><td>{fz(r["feasibility"], True)}</td></tr>')
     h.append('</tbody></table></div>')
     h.append(f'<p class="small">{T.FZ_LEGEND}</p>')
     h.append('<h3 id="rt-details">Considerations per route</h3><div class="filters"><button class="btn" data-expand="route-cards">Expand all</button>'
              '<span class="count">Each route: what is confirmed, what rests on assumptions, what needs an answer, and the specificities to be aware of.</span></div><div id="route-cards">')
     for i, r in enumerate(rs):
-        body = [f'<p>{inline(r["documented"])} {lbl("F")}</p>']
+        eps = ''.join(f'<li><span class="ep"><b>{esc(e)}</b></span> <span class="sub">main</span></li>' for e in r['horus_main'])
+        eps += ''.join(f'<li><span class="ep">{esc(e)}</span></li>' for e in r['horus_support'])
+        body = [f'<h4>Horus endpoints</h4><ul class="endpoint-list plain">{eps}</ul>',
+                f'<h4>What the documentation confirms</h4><p>{inline(r["documented"])}</p>']
         if r['considerations']:
             body.append('<h4>Specificities to be aware of</h4>' + ul(r['considerations'], with_basis))
         if r['not_mappable']:
@@ -134,7 +138,7 @@ def field_table(tid, rows):
 
 
 def flow_h(steps):
-    return '<ol class="hflow">' + ''.join(f'<li>{inline(s)}</li>' for s in steps) + '</ol>'
+    return '<ol class="flow">' + ''.join(f'<li>{inline(s)}</li>' for s in steps) + '</ol>'
 
 
 def task_b(D):

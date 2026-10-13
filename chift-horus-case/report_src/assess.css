@@ -36,3 +36,7 @@
 .diagram-flow .arrow { align-self: center; color: var(--muted); font-size: 1.4rem; }
 @media (max-width: 760px) { .diagram-flow { grid-template-columns: minmax(0, 1fr); } .diagram-flow .arrow { transform: rotate(90deg); justify-self: center; } }
 .ref-link { font-size: var(--step--1); }
+
+.endpoint-list.plain { list-style: none; padding: 0; margin: 0.3rem 0 0.8rem; display: grid; gap: 0.25rem; }
+.endpoint-list.plain .ep { font-family: var(--font-mono); font-size: 0.78rem; overflow-wrap: anywhere; }
+.overview-table td.eps .sub { display: block; margin-top: 0.35rem; font-family: var(--font-sans); }

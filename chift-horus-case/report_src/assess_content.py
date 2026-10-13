@@ -41,19 +41,22 @@ def _names(rs):
     return ', '.join(out[:-1]) + ' and ' + out[-1] if len(out) > 1 else ''.join(out)
 
 
+WORDS = {0: 'No', 1: 'One', 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five', 6: 'Six', 7: 'Seven', 8: 'Eight', 9: 'Nine', 10: 'Ten', 11: 'Eleven'}
+
+
 def answer(routes):
     by = {lvl: [r for r in routes if r['feasibility'] == lvl] for lvl in ('Confirmed', 'Feasible with assumptions', 'Needs confirmation', 'Not yet concluded')}
     parts = [f'<b>The Horus Software API has a documented endpoint for the core object of every Chift route in scope, so the documentation rules out none of the {len(routes)} routes.</b> '
              'That is not the same as every route being settled. ']
     if by['Confirmed']:
-        parts.append(f'{len(by["Confirmed"])} routes are confirmed by the documentation ({_names(by["Confirmed"])}). ')
+        parts.append(f'{WORDS[len(by["Confirmed"])]} routes are confirmed by the documentation ({_names(by["Confirmed"])}). ')
     if by['Feasible with assumptions']:
-        parts.append(f'{len(by["Feasible with assumptions"])} are feasible but rely on assumptions the documentation does not confirm ({_names(by["Feasible with assumptions"])}). ')
+        parts.append(f'{WORDS[len(by["Feasible with assumptions"])]} are feasible but rely on assumptions the documentation does not confirm ({_names(by["Feasible with assumptions"])}). ')
     if by['Needs confirmation']:
-        parts.append(f'{len(by["Needs confirmation"])} need answers from Horus or decisions from Chift before their design is final ({_names(by["Needs confirmation"])}); '
+        parts.append(f'{WORDS[len(by["Needs confirmation"])]} need answers from Horus or decisions from Chift before their design is final ({_names(by["Needs confirmation"])}); '
                      'these carry most of the business value and most of the effort. ')
     if by['Not yet concluded']:
-        parts.append(f'{len(by["Not yet concluded"])} cannot be concluded yet ({_names(by["Not yet concluded"])}). ')
+        parts.append(f'{WORDS[len(by["Not yet concluded"])]} cannot be concluded yet ({_names(by["Not yet concluded"])}). ')
     parts.append('Behaviour on large folders cannot be concluded from the documentation for any list route.')
     return ''.join(parts)
 TILE_NOTE = ('Each route is rated by the weakest point that materially affects it. "Confirmed" means the documentation shows Horus can do what the route needs; '
@@ -88,9 +91,9 @@ DIAGRAM = '''<div class="diagram-flow" role="img" aria-label="One Chift request 
 </div>'''
 
 # ---------- 3. Routes ----------
-ROUTES_INTRO = ('This table answers Task A: for each Chift route, the Horus endpoint(s) to use and how the route works. Main endpoints are in bold; '
-                'supporting calls follow. The feasibility column separates what the documentation confirms from what still depends on assumptions or answers. '
-                'The considerations for each route are listed below the table.')
+ROUTES_INTRO = ('This table answers Task A: for each Chift route, the main Horus endpoint(s) to use and how the route works. Most routes also need supporting calls '
+                '(reference data, cached per folder, checks and read-backs); each route\u2019s details list them together with the specificities to be aware of. '
+                'The feasibility column separates what the documentation confirms from what still depends on assumptions or answers.')
 FZ_LEGEND = ('<b>Confirmed</b>: the documentation shows Horus can serve the route; remaining work is mapping. '
              '<b>Feasible with assumptions</b>: the route can be built, but part of the Chift contract rests on an interpretation the documentation does not confirm. '
              '<b>Needs confirmation</b>: a point that affects correctness needs an answer from Horus or a decision from Chift before the design is final. '
