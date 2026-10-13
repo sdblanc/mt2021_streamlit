@@ -4,6 +4,12 @@ from render import esc, inline, rich, chip, lbl, cls, field_table, endpoint_list
 from content_static import TITLE, DESCRIPTION, RAIL_LABEL, header_html, footer_html, SCOPE_HTML, ARCH_SVG, CONCEPTS, CONVENTIONS
 import curated as K
 
+def level(v):
+    if not v:
+        return '—'
+    return f'<span class="lvl lvl-{esc(v.lower())}">{esc(v)}</span>'
+
+
 GROUP_ORDER = ['create_client', 'get_invoices', 'create_invoice', 'journals_folders', 'ledger_accounts',
                'misc_operation', 'analytics', 'outstandings']
 
@@ -36,7 +42,10 @@ def summary_section(groups, cross):
                 used.add(e['path'])
     tiles = ''.join(
         f'<div class="tile"><div class="n">{counts[k]}</div><div class="t">{chip(k)}</div></div>'
-        for k in ['supported', 'workaround', 'not_supported', 'unknown'])
+        for k in ['supported', 'workaround', 'not_supported'] + (['unknown'] if counts.get('unknown') else []))
+    gated = [r for r in rows if r.get('blocking')]
+    if gated:
+        tiles += f'<div class="tile"><div class="n">{len(gated)}</div><div class="t">routes waiting on a priority-1 answer before final design</div></div>'
     tiles += f'<div class="tile"><div class="n">{len(rows)}</div><div class="t">Chift routes analysed</div></div>'
     tiles += f'<div class="tile"><div class="n">{len([p for p in used if p.startswith("/")])}</div><div class="t">of 72 Horus endpoints called, including optional ones</div></div>'
     html = [f'<p class="lede">{K.SUMMARY_LEDE}</p>', f'<div class="overview">{tiles}</div>']
@@ -63,12 +72,17 @@ def horus_section(groups, cross):
 def routes_section(groups, cross):
     rows = overview_rows(groups)
     h = [f'<p>{K.ROUTES_INTRO}</p>']
-    h.append('<div class="table-wrap"><table class="overview-table"><thead><tr><th>Chift route</th><th>Horus endpoint(s)</th><th>Call pattern</th><th>Verdict</th></tr></thead><tbody>')
+    h.append('<div class="table-wrap"><table class="overview-table"><thead><tr><th>Chift route</th><th>Horus endpoint(s)</th><th>Call pattern</th><th>Verdict</th>'
+             '<th>Build complexity</th><th>Client impact</th><th>Depends on</th></tr></thead><tbody>')
     for r in rows:
         eps = '<br>'.join(esc(e) for e in r['endpoints'])
+        blocking = ', '.join(r.get('blocking') or []) or '—'
         h.append(f'<tr><td><a href="#card-{r["group"]}"><b>{esc(r["route"])}</b></a><span class="sub mono">{esc(r["chift"])}</span></td>'
-                 f'<td class="eps">{eps}</td><td>{esc(r["pattern"])}</td><td>{chip(r["verdict"])}</td></tr>')
+                 f'<td class="eps">{eps}</td><td>{esc(r["pattern"])}</td><td>{chip(r["verdict"])}</td>'
+                 f'<td>{level(r.get("complexity"))}</td><td>{inline(r.get("impact", "—"))}</td><td class="num">{esc(blocking)}</td></tr>')
     h.append('</tbody></table></div>')
+    if getattr(K, 'RATING_NOTE', ''):
+        h.append(f'<p class="small">{K.RATING_NOTE}</p>')
     h.append('<div class="filters"><button class="btn" data-expand="route-cards">Expand all</button><span class="count">Open a route for its endpoints, call sequence, considerations and key attribute mapping.</span></div>')
     h.append('<div id="route-cards">')
     for key in GROUP_ORDER:
@@ -116,6 +130,15 @@ def task_b_section(groups, cross):
     return ''.join(h)
 
 
+def impact_section(groups, cross):
+    h = [f'<p>{K.IMPACT_INTRO}</p>']
+    h.append('<div class="table-wrap"><table><thead><tr><th>Area</th><th>What client applications and their users will notice</th><th>What to do</th><th>Routes</th><th>Basis</th></tr></thead><tbody>')
+    for e in K.CLIENT_IMPACT:
+        h.append(f'<tr><td><b>{esc(e["area"])}</b></td><td>{e["notice"]}</td><td>{e["todo"]}</td><td>{esc(e["routes"])}</td><td>{lbl(e["label"])}</td></tr>')
+    h.append('</tbody></table></div>')
+    return ''.join(h)
+
+
 def dependencies_section(groups, cross):
     h = [f'<p>{K.DEPS_INTRO}</p>']
     h.append('<div class="table-wrap"><table><thead><tr><th>Dependency</th><th>Why the requested routes need it</th><th>Horus support</th><th>Basis</th></tr></thead><tbody>')
@@ -144,13 +167,26 @@ def risks_section(groups, cross):
     return ''.join(h)
 
 
+TIER_TEXT = {1: '1 · Before build', 2: '2 · Route design', 3: '3 · Verify in test folder'}
+
+
+def q_tier(q):
+    return int(q.get('tier') or 2)
+
+
+def tier_chip(q):
+    t = q_tier(q)
+    return f'<span class="tier tier-{t}">{esc(TIER_TEXT.get(t, str(t)))}</span>'
+
+
 def questions_section(groups, cross):
     h = [f'<p>{K.QUESTIONS_INTRO}</p>']
     for who, items in (('Horus', K.QUESTIONS_HORUS), ('Chift', K.QUESTIONS_CHIFT)):
         h.append(f'<h3 id="q-{who.lower()}">Questions for {who}</h3>')
-        h.append('<div class="table-wrap"><table class="q-table"><thead><tr><th>#</th><th>Question</th><th>Why it matters</th><th>Routes</th></tr></thead><tbody>')
-        for i, q in enumerate(items, 1):
-            h.append(f'<tr><td class="num">{who[0]}{i}</td><td>{q["q"]}</td><td>{q["why"]}</td><td>{esc(q["routes"])}</td></tr>')
+        h.append('<div class="table-wrap"><table class="q-table"><thead><tr><th>#</th><th>Priority</th><th>Question</th><th>Why it matters</th><th>Routes</th></tr></thead><tbody>')
+        numbered = [(q.get('id') or f'{who[0]}{i}', q) for i, q in enumerate(items, 1)]
+        for qid, q in sorted(numbered, key=lambda t: (q_tier(t[1]), int(re.sub(r'\D', '', t[0]) or 0))):
+            h.append(f'<tr id="q-{esc(qid.lower())}"><td class="num">{esc(qid)}</td><td>{tier_chip(q)}</td><td>{q["q"]}</td><td>{q["why"]}</td><td>{esc(q["routes"])}</td></tr>')
         h.append('</tbody></table></div>')
     return ''.join(h)
 
@@ -171,11 +207,16 @@ def appendix_section(groups, cross):
         h.append(f'<tr><td class="mono">{esc(r["method"])} {esc(r["path"])}</td><td>{inline(r["purpose"])}</td><td>{"Yes" if r["writes"] else "No"}</td><td>{inline(r["chift_relevance"])}</td></tr>')
     h.append('</tbody></table></div></div></details>')
     h.append('<details class="route" id="appendix-decisions"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>B. Cross-route working assumptions</span>'
-             '<span class="r-line">Proposals applied consistently across all route mappings. They are not agreed rules: most depend on an open question in section 8 and will change if the answer differs.</span></summary><div class="r-body">')
+             '<span class="r-line">Proposals applied consistently across all route mappings. They are not agreed rules: most depend on an open question in section 9 and will change if the answer differs.</span></summary><div class="r-body">')
     h.append('<div class="table-wrap"><table><thead><tr><th>#</th><th>Working assumption</th><th>Rationale</th><th>Depends on</th></tr></thead><tbody>')
     for d in K.DECISIONS:
         h.append(f'<tr><td class="num">{esc(d[0])}</td><td>{d[1]}</td><td>{d[2]}</td><td>{esc(K.DECISION_DEPENDS.get(d[0], ""))}</td></tr>')
     h.append('</tbody></table></div></div></details>')
+    if getattr(K, 'TAX_APPENDIX', ''):
+        h.append('<details class="route" id="appendix-tax"><summary><span class="r-title"><span class="caret" aria-hidden="true"></span>C. Accepted VAT combinations (Horus spreadsheets)</span>'
+                 '<span class="r-line">What the two spreadsheets linked from the Horus invoice endpoints contain, and how they feed the VAT-code catalogue.</span></summary><div class="r-body">')
+        h.append(K.TAX_APPENDIX)
+        h.append('</div></details>')
     return ''.join(h)
 
 
@@ -187,9 +228,10 @@ def sections(groups, cross):
         ('horus', '3', 'How Horus works', horus_section(groups, cross), [('horus-concepts', 'Concept map'), ('horus-conventions', 'Conventions')]),
         ('routes', '4', 'Route mapping (Task A)', routes_section(groups, cross), []),
         ('attributes', '5', 'Attribute-level mapping (Task B)', task_b_section(groups, cross), tb_subs),
-        ('dependencies', '6', 'Dependencies and building blocks', dependencies_section(groups, cross), []),
-        ('risks', '7', 'Edge cases and error handling', risks_section(groups, cross), []),
-        ('questions', '8', 'Open questions', questions_section(groups, cross), [('q-horus', 'For Horus'), ('q-chift', 'For Chift')]),
-        ('next', '9', 'Conclusion and next steps', next_section(groups, cross), []),
-        ('appendix', 'A–B', 'Appendices', appendix_section(groups, cross), []),
+        ('impact', '6', 'Impact on client applications', impact_section(groups, cross), []),
+        ('dependencies', '7', 'Dependencies and building blocks', dependencies_section(groups, cross), []),
+        ('risks', '8', 'Edge cases and error handling', risks_section(groups, cross), []),
+        ('questions', '9', 'Open questions', questions_section(groups, cross), [('q-horus', 'For Horus'), ('q-chift', 'For Chift')]),
+        ('next', '10', 'Conclusion and next steps', next_section(groups, cross), []),
+        ('appendix', 'A–C' if getattr(K, 'TAX_APPENDIX', '') else 'A–B', 'Appendices', appendix_section(groups, cross), []),
     ]
