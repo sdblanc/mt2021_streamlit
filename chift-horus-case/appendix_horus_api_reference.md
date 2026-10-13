@@ -1,6 +1,6 @@
 # Appendix: Horus Software API reference (rendered)
 
-Source: Notion export of the Horus documentation pages (Welcome page + every API Reference page; docs updated 2026-09-24), uploaded by Silas to Google Drive as 'horus' on 13 Oct 2026. Each page embeds an OpenAPI 3.0.3 fragment; these were merged (71 unique endpoints; book-entries.list appeared twice, identical) and rendered mechanically below. '*' = required. Not included in the export: Authentication overview, Core Concepts (Making requests, Responses & errors, Sideloading, Data model) and the task guides.
+Source: Notion export of the Horus documentation pages (Welcome page + API Reference pages; docs updated 2026-09-24), uploaded by Silas to Google Drive as 'horus' on 13 Oct 2026, plus the book-entries.info page supplied separately the same day. Each page embeds an OpenAPI 3.0.3 fragment; these were merged (72 unique endpoints; book-entries.list appeared twice, identical) and rendered mechanically below. '*' = required. The guide pages are in appendix_horus_guides.md.
 
 ## Welcome page (verbatim)
 
@@ -2803,6 +2803,56 @@ REQUEST BODY (application/json) required: object
 RESPONSE 200: OK -> object
   - Data: object  // 
       - MatchNo: number [example=15]  // 
+RESPONSE 400: Bad Request – the request contains invalid data or references non-existing resources. -> object
+RESPONSE 401: Unauthorized – invalid, expired or missing access token.
+RESPONSE 403: Forbidden – the user/integrator is not allowed to access this resource. -> object
+RESPONSE 404: Not Found – the resource was not found. -> object
+RESPONSE 500: Internal Server Error – something went wrong unexpectedly. -> object
+
+==========================================================================================
+## GET /book-entries.info   [tags: Book entries]
+PAGE TEXT: Get details for a specific book entry.
+  param[query] Id *: string // 
+RESPONSE 200: OK -> object
+  - Data: object  // 
+      - Id: string [example="0d6822be-8559-488a-b348-eea0dd4a735b"]  // 
+      - DocumentNo: number [example=1904001]  // 
+      - Confirmed: boolean [example=true]  // 
+      - Verified: boolean [example=true]  // False by default. Can only ever be set to 'True' if an additionnal verification step has been configured in Horus. Contact us for more info.
+      - VerifiedBy: object|null  // Nullable. Only set if 'Verified' is set to 'True'.
+          - Type: string [example="Users"]  // 
+          - Id: string [example="45568715-39e3-449d-a87c-8ccfcf9be53a"]  // 
+      - EntryType: number enum[0, 100, 400, 600, 800, 810, 850, 900, 910, 1000] [example=100]  // - `0`: Undefined - `100`: Normal - `400`: ManualMO - `600`: AutomaticMO - `800`: TemporaryClosingMO - `810`: AutomaticClosingMO - `850`: FiscalClosingMO - `900`: ResultReportMO - `910`: OpeningMO - `1000`: CostMO
+      - OperationType: number enum[0, 100, 200, 300] [example=0]  // - `0`: Undefined - `100`: Vat - `200`: Reclassification - `300`: Depreciation
+      - Date: string(date-time) [example="2019-04-04T00:00:00+00:00"]  // 
+      - LastModifiedDate: string(date-time) [example="2019-04-06T00:00:00+00:00"]  // Date at which the record was last modified in the database.
+      - CompanyDetail: object|null  // 
+          - Company: object|null  // 
+              - Type: string [example="Companies"]  // 
+              - Id: string [example="32ebe925-23cc-4a3e-8b36-8b2b33780fc1"]  // 
+          - RemarkPayment: string|null  // 
+          - RemarkCompany: string|null  // 
+          - DueDate: string|null  // 
+          - PaymentDate: string|null  // 
+          - TotalAmount: number|null  // 
+          - TurnoverAmount: number|null  // 
+          - TaxAmount: number|null  // 
+          - DiscountDetail: object|null  // 
+              - DiscountDate: string|null  // 
+              - DiscountAmount: number|null  // 
+              - DiscountRate: number|null  // 
+      - Folder: object  // 
+          - Type: string [example="Folders"]  // 
+          - Id: string [example="83f26e75-f474-4b09-a1d3-aa698e18fbf0"]  // 
+      - Daybook: object  // 
+          - Type: string [example="Daybooks"]  // 
+          - Id: string [example="87f48c7e-54d1-48d2-aed7-447e6003bc67"]  // 
+      - Document: object|null  // 
+          - Type: string [example="Documents"]  // 
+          - Id: string [example="66cdb46b-0081-43f0-b398-ad81a4d79bc2"]  // 
+      - AccountHistories: array[object]  // 
+          - Type: string [example="AccountHistories"]  // 
+          - Id: string [example="jdhrk2be-8559-488a-452r-eea0dd4a735b"]  // 
 RESPONSE 400: Bad Request – the request contains invalid data or references non-existing resources. -> object
 RESPONSE 401: Unauthorized – invalid, expired or missing access token.
 RESPONSE 403: Forbidden – the user/integrator is not allowed to access this resource. -> object
