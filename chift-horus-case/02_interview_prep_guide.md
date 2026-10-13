@@ -132,6 +132,6 @@ What you *do* own: what each field means, why it maps where it does, what is los
 
 - [ ] Walk the route table out loud, one sentence per route.
 - [ ] Explain one Task B row of each type: direct, transform, lookup, generated, not available.
-- [ ] Explain the "How sure are we?" box: confirmed, assumption, needs confirmation, not concluded.
+- [ ] Explain the "What is confirmed, assumed or still open" box in section 1: confirmed, assumption, needs confirmation, not concluded.
 - [ ] Pick the five questions you'll actually ask Chift.
 - [ ] If you can, spot-check docs.chift.eu for the create-invoice and outstanding-items routes.

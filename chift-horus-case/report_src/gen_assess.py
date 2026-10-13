@@ -12,8 +12,8 @@ import assess_content as T
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FZ = {  # feasibility levels, weakest last
-    'Confirmed': ('ok', 'Confirmed by the documentation'),
-    'Feasible with assumptions': ('ass', 'Feasible, depends on assumptions'),
+    'Confirmed': ('ok', 'Confirmed'),
+    'Feasible with assumptions': ('ass', 'Feasible with assumptions'),
     'Needs confirmation': ('conf', 'Needs confirmation'),
     'Not yet concluded': ('open', 'Not yet concluded'),
 }
@@ -66,7 +66,7 @@ def summary(D):
     E = D['lq']['feasibility_evidence']
     boxes = [('confirmed', 'What the documentation confirms', 'ok'), ('assumption', 'What depends on an assumption', 'ass'),
              ('confirmation', 'What needs confirmation from Horus or Chift', 'conf'), ('not_concluded', 'What cannot be concluded yet', 'open')]
-    h.append('<h3 id="sum-evidence">How sure are we?</h3><div class="quad">')
+    h.append('<h3 id="sum-evidence">What is confirmed, assumed or still open</h3><div class="quad">')
     for key, title, k in boxes:
         h.append(f'<div class="q q-{k}"><h4>{esc(title)}</h4>' + ul(E[key], with_basis) + '</div>')
     h.append('</div>')
@@ -92,7 +92,7 @@ def routes(D):
     for i, r in enumerate(rs):
         main = '<br>'.join(f'<b>{esc(e)}</b>' for e in r['horus_main'])
         n = len(r['horus_support'])
-        sup = f'<span class="sub">+ {n} supporting call{"s" if n != 1 else ""} (<a href="#rt-{i}">details</a>)</span>' if n else ''
+        sup = f'<span class="sub">+ {n} supporting endpoint{"s" if n != 1 else ""} (<a href="#rt-{i}">details</a>)</span>' if n else ''
         h.append(f'<tr><td><a href="#rt-{i}"><b>{esc(r["route"])}</b></a><span class="sub mono">{esc(r["chift"])}</span></td>'
                  f'<td class="eps">{main}{sup}</td><td>{inline(r["how_it_works"])}</td><td>{fz(r["feasibility"], True)}</td></tr>')
     h.append('</tbody></table></div>')
@@ -161,9 +161,12 @@ def task_b(D):
 
 
 def limitations(D):
-    h = [f'<p>{T.LIMITS_INTRO}</p>']
+    h = [f'<p>{T.LIMITS_INTRO}</p>', '<h3 id="lim-clients">What Chift\u2019s clients will notice</h3>', f'<p class="small">{T.CLIENT_IMPACT_INTRO}</p>',
+         '<div class="table-wrap"><table><thead><tr><th>Area</th><th>What the client notices</th><th>What to do</th></tr></thead><tbody>'
+         + ''.join(f'<tr><td><b>{a}</b></td><td>{b}</td><td>{c}</td></tr>' for a, b, c in T.CLIENT_IMPACT) + '</tbody></table></div>',
+         '<h3 id="lim-list">Limitations behind it</h3>', f'<p>{T.LIMITS_LIST_INTRO}</p>']
     for i, l in enumerate(D['lq']['limitations'], 1):
-        h.append(f'<div class="limit"><h3 id="lim-{i}"><span class="num">{i}</span>{esc(l["title"])} {lbl(l["basis"])}</h3>'
+        h.append(f'<div class="limit"><h4 id="lim-{i}"><span class="num">{i}</span>{esc(l["title"])} {lbl(l["basis"])}</h4>'
                  f'<dl><dt>What Horus does</dt><dd>{inline(l["what"])}</dd><dt>Business implication</dt><dd>{inline(l["implication"])}</dd>'
                  f'<dt>Proposed handling</dt><dd>{inline(l["handling"])}</dd><dt>To be decided by</dt><dd>{esc(l["decision_owner"])}</dd>'
                  f'<dt>Routes</dt><dd>{esc(l["routes"])}</dd></dl></div>')
@@ -212,11 +215,11 @@ def build(out_html):
     css = open(os.path.join(HERE, 'shell.css')).read() + '\n' + open(os.path.join(HERE, 'assess.css')).read()
     js = open(os.path.join(HERE, 'shell.js')).read()
     secs = [
-        ('summary', '1', 'Executive summary and feasibility', summary(D), [('sum-evidence', 'How sure are we?'), ('sum-messages', 'Key messages')]),
+        ('summary', '1', 'Executive summary and feasibility', summary(D), [('sum-evidence', 'Confirmed, assumed, open'), ('sum-messages', 'Key messages')]),
         ('differences', '2', 'How Horus differs from Chift', differences(D), []),
         ('routes', '3', 'Route mapping (Task A)', routes(D), [('rt-details', 'Considerations per route')]),
         ('fields', '4', 'Field mappings (Task B)', task_b(D), [(f'tb-{k}', t) for k, t, _ in T.TASKB_ORDER]),
-        ('limits', '5', 'Key limitations and design considerations', limitations(D), []),
+        ('limits', '5', 'Key limitations and design considerations', limitations(D), [('lim-clients', 'What clients will notice'), ('lim-list', 'Limitations')]),
         ('questions', '6', 'Open questions and next steps', questions(D), [('q-before', 'Before build'), ('next-steps', 'Next steps')]),
         ('appendix', 'A–B', 'Appendices', appendix(D), []),
     ]
